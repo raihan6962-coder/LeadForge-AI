@@ -8,12 +8,15 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { LineChart } from '@/components/ui/Charts';
 import { useNav } from '@/contexts/NavContext';
 import { useToast } from '@/contexts/ToastContext';
-import {
-  currentJob, leadDiscoveryChartData, qualifiedLeadsChartData,
-  outreachStats, keywords, automationRuns,
-} from '@/data/mockData';
 import { useApi } from '@/hooks/useApi';
 import type { AutomationPhase, KeywordRun } from '@/types';
+
+const currentJob = { elapsedSeconds: 0, progress: { current: 0, target: 1000 }, keyword: '', phase: 'discovery' as AutomationPhase, expectedCompletion: '', qualified: 0, duplicates: 0, rejected: 0 };
+const keywords: any[] = [];
+const automationRuns: any[] = [];
+const outreachStats = { queueSize: 0 };
+const leadDiscoveryChartData: any[] = [];
+const qualifiedLeadsChartData: any[] = [];
 
 const phases: { id: AutomationPhase; label: string; icon: string }[] = [
   { id: 'discovery', label: 'Discovery', icon: '🔍' },
@@ -47,7 +50,7 @@ export function OverviewPage() {
     return () => clearInterval(interval);
   }, []);
 
-  const todayKeyword = keywords.find(k => k.status === 'running') || keywords[26];
+  const todayKeyword = keywords.find(k => k.status === 'running') || keywords[26] || { keyword: '', status: 'scheduled' as const, qualifiedLeads: 0, targetLeads: 0, completion: 0 };
   const recentRuns = automationRuns.slice(0, 4);
 
   return (

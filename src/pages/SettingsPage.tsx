@@ -7,7 +7,11 @@ import { Card, CardHeader } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input, Select, Toggle, Textarea } from '@/components/ui/Input';
 import { useToast } from '@/contexts/ToastContext';
-import { qualificationCriteria, outreachStats, telegramConfig, forwardingConfig } from '@/data/mockData';
+
+const qualificationCriteria = { minRating: 0, maxRating: 5, minInstalls: 0, maxInstalls: Infinity, minAppAge: 0, maxAppAge: Infinity, requiredContactInfo: false, requiredWebsite: false, requiredCompanyInfo: false, excludedKeywords: [] as string[], targetQualifiedCount: 0 };
+const outreachStats = { sendingIntervalMin: 0, sendingIntervalMax: 0 };
+const telegramConfig = { botToken: '', chatId: '', enabled: false, notifications: {} as Record<string, boolean> };
+const forwardingConfig = { email: '', enabled: false };
 
 type Section = 'general' | 'automation' | 'qualification' | 'ai' | 'sheets' | 'email' | 'telegram' | 'forwarding' | 'notifications' | 'security' | 'data' | 'system';
 

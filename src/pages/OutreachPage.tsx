@@ -8,7 +8,9 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useToast } from '@/contexts/ToastContext';
-import { outreachStats, senderAccounts } from '@/data/mockData';
+
+const outreachStats = { queueSize: 0, sent: 0, pending: 0, failed: 0, deferred: 0, replies: 0, bounces: 0, sendingIntervalMin: 0, sendingIntervalMax: 0 };
+const senderAccounts: any[] = [];
 
 const pipelineStages = [
   { label: 'Lead', icon: '◉', count: 18456, color: 'text-accent-400' },

@@ -9,8 +9,9 @@ import { Button } from '@/components/ui/Button';
 import { Input, Select } from '@/components/ui/Input';
 import { Drawer } from '@/components/ui/Modal';
 import { useToast } from '@/contexts/ToastContext';
-import { replies as initialReplies } from '@/data/mockData';
 import type { Reply } from '@/types';
+
+const initialReplies: Reply[] = [];
 
 const classIcon: Record<string, typeof User> = {
   human: User,

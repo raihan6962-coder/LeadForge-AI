@@ -8,10 +8,13 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { Input, Toggle } from '@/components/ui/Input';
 import { useToast } from '@/contexts/ToastContext';
-import {
-  googleSheetsConfig, aiConfig, aiUsage, telegramConfig, forwardingConfig,
-  senderAccounts,
-} from '@/data/mockData';
+
+const googleSheetsConfig = { webAppUrl: '', autoSync: false, status: 'disconnected', lastSync: '', lastSuccessfulFetch: '', rowsImported: 0, errors: 0 };
+const aiConfig = { provider: '', apiKey: '', personalizationEnabled: false, model: '', temperature: 0, maxTokens: 0 };
+const aiUsage = { requests: 0, successful: 0, failed: 0, avgLatencyMs: 0, estimatedCost: '$0' };
+const telegramConfig = { enabled: false, botToken: '', chatId: '', notifications: {} as Record<string, boolean> };
+const forwardingConfig = { enabled: false, email: '', lastForwarded: '', errors: 0 };
+const senderAccounts: any[] = [];
 
 export function IntegrationsPage() {
   const { addToast } = useToast();

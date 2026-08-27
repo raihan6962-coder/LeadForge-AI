@@ -5,11 +5,17 @@ import {
 } from 'lucide-react';
 import { Card, CardHeader, KPICard } from '@/components/ui/Card';
 import { LineChart, BarChart, DonutChart, Heatmap } from '@/components/ui/Charts';
-import {
-  leadDiscoveryChartData, qualifiedLeadsChartData, emailsSentChartData,
-  repliesChartData, qualificationDonutData, replyClassificationData,
-  keywordAnalytics, senderAnalytics, automationAnalytics, heatmapData,
-} from '@/data/mockData';
+
+const leadDiscoveryChartData: any[] = [];
+const qualifiedLeadsChartData: any[] = [];
+const emailsSentChartData: any[] = [];
+const repliesChartData: any[] = [];
+const qualificationDonutData: any[] = [];
+const replyClassificationData: any[] = [];
+const keywordAnalytics: any[] = [];
+const senderAnalytics: any[] = [];
+const automationAnalytics = { totalRuns: 0, avgRuntimeMinutes: 0, successRate: 0, failedJobs: 0, overruns: 0 };
+const heatmapData: any[] = [];
 
 type DateRange = 'today' | '7d' | '30d' | 'custom';
 

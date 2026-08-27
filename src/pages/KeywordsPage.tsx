@@ -9,8 +9,9 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal, ConfirmDialog } from '@/components/ui/Modal';
 import { useToast } from '@/contexts/ToastContext';
-import { keywords as initialKeywords } from '@/data/mockData';
 import type { Keyword } from '@/types';
+
+const initialKeywords: Keyword[] = [];
 
 export function KeywordsPage() {
   const { addToast } = useToast();

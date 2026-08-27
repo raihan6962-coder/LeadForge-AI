@@ -9,8 +9,9 @@ import { Button } from '@/components/ui/Button';
 import { Input, Textarea } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/contexts/ToastContext';
-import { emailTemplates as initialTemplates } from '@/data/mockData';
 import type { EmailTemplate } from '@/types';
+
+const initialTemplates: EmailTemplate[] = [];
 
 const allVariables = [
   '{{app_name}}', '{{developer_name}}', '{{rating}}', '{{install_count}}',

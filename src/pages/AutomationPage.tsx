@@ -8,7 +8,10 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/Modal';
 import { useToast } from '@/contexts/ToastContext';
-import { automationRuns, currentJob, telegramConfig } from '@/data/mockData';
+
+const automationRuns: any[] = [];
+const currentJob = { elapsedSeconds: 0, progress: { current: 0, target: 1000 }, phase: 'discovery', expectedCompletion: '' };
+const telegramConfig = { enabled: false };
 
 function formatElapsed(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -35,7 +38,7 @@ export function AutomationPage() {
     return () => clearInterval(interval);
   }, [isRunning]);
 
-  const currentRun = automationRuns[0];
+  const currentRun = automationRuns[0] || { keyword: '', startedAt: '', expectedEnd: '', actualEnd: null, leadsDiscovered: 0, qualified: 0, duplicates: 0, emailsSent: 0, replies: 0, status: 'running' as const, id: '', exceededExpected: false };
   const now = new Date();
   const expectedEnd = new Date(currentRun.expectedEnd);
   const isOverdue = now > expectedEnd && isRunning;

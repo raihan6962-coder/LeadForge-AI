@@ -10,8 +10,9 @@ import { Input, Select } from '@/components/ui/Input';
 import { Drawer } from '@/components/ui/Modal';
 import { DataTable, Pagination } from '@/components/ui/DataTable';
 import { useToast } from '@/contexts/ToastContext';
-import { leads as allLeads } from '@/data/mockData';
 import type { Lead } from '@/types';
+
+const allLeads: Lead[] = [];
 
 const PAGE_SIZE = 10;
 

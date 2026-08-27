@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/Button';
 import { Input, Select } from '@/components/ui/Input';
 import { Pagination } from '@/components/ui/DataTable';
 import { useToast } from '@/contexts/ToastContext';
-import { activityLogs } from '@/data/mockData';
+
+const activityLogs: any[] = [];
 
 const PAGE_SIZE = 12;
 
