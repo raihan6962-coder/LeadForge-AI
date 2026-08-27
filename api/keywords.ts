@@ -1,8 +1,7 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
-function getAdminDb() {
+function getDb() {
   if (getApps().length === 0) {
     initializeApp({
       credential: cert({
@@ -15,48 +14,29 @@ function getAdminDb() {
   return getFirestore();
 }
 
-function json(res: VercelResponse, status: number, data: unknown) {
-  return res.status(status).json(data);
-}
-
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const db = getAdminDb();
-  const col = db.collection('keywords');
-
+export default async function handler(req, res) {
+  const db = getDb();
   try {
-    switch (req.method) {
-      case 'GET': {
-        const snap = await col.orderBy('day', 'asc').get();
-        const keywords = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        return json(res, 200, { success: true, data: keywords });
-      }
-
-      case 'POST': {
-        const data = req.body;
-        delete data.id;
-        const ref = await col.add({ ...data, createdAt: new Date().toISOString() });
-        return json(res, 201, { success: true, data: { id: ref.id, ...data } });
-      }
-
-      case 'PUT': {
-        const { id, ...updates } = req.body;
-        if (!id) return json(res, 400, { success: false, error: 'Missing id' });
-        delete updates.createdAt;
-        await col.doc(id).set({ ...updates, updatedAt: new Date().toISOString() }, { merge: true });
-        return json(res, 200, { success: true, data: { id, ...updates } });
-      }
-
-      case 'DELETE': {
-        const { id: delId } = req.query;
-        if (!delId) return json(res, 400, { success: false, error: 'Missing id' });
-        await col.doc(delId as string).delete();
-        return json(res, 200, { success: true, data: { deleted: true } });
-      }
-
-      default:
-        return json(res, 405, { success: false, error: 'Method not allowed' });
+    if (req.method === 'GET') {
+      const snap = await db.collection('keywords').orderBy('day', 'asc').get();
+      const keywords = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      return res.status(200).json({ success: true, data: keywords });
     }
+    if (req.method === 'POST') {
+      const data = req.body;
+      delete data.id;
+      const ref = await db.collection('keywords').add({ ...data, createdAt: new Date().toISOString() });
+      return res.status(201).json({ success: true, data: { id: ref.id, ...data } });
+    }
+    if (req.method === 'PUT') {
+      const { id, ...updates } = req.body;
+      if (!id) return res.status(400).json({ success: false, error: 'Missing id' });
+      delete updates.createdAt;
+      await db.collection('keywords').doc(id).set({ ...updates, updatedAt: new Date().toISOString() }, { merge: true });
+      return res.status(200).json({ success: true, data: { id, ...updates } });
+    }
+    return res.status(405).json({ success: false, error: 'Method not allowed' });
   } catch (err) {
-    return json(res, 500, { success: false, error: err instanceof Error ? err.message : 'Internal error' });
+    return res.status(500).json({ success: false, error: err.message });
   }
 }

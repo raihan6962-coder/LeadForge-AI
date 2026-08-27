@@ -1,8 +1,7 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
-function getAdminDb() {
+function getDb() {
   if (getApps().length === 0) {
     initializeApp({
       credential: cert({
@@ -15,38 +14,28 @@ function getAdminDb() {
   return getFirestore();
 }
 
-function json(res: VercelResponse, status: number, data: unknown) {
-  return res.status(status).json(data);
-}
-
-// ─── Settings API ───────────────────────────────────────────────────
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const db = getAdminDb();
-  const docRef = db.collection('settings').doc('main');
-
-  try {
-    switch (req.method) {
-      case 'GET': {
-        const snap = await docRef.get();
-        if (!snap.exists) {
-          return json(res, 200, { success: true, data: null });
-        }
-        return json(res, 200, { success: true, data: { id: snap.id, ...snap.data() } });
-      }
-
-      case 'PUT':
-      case 'PATCH': {
-        const data = req.body;
-        delete data.id;
-        delete data.createdAt;
-        await docRef.set({ ...data, updatedAt: new Date().toISOString() }, { merge: true });
-        return json(res, 200, { success: true, data: { id: 'main', ...data } });
-      }
-
-      default:
-        return json(res, 405, { success: false, error: 'Method not allowed' });
+export default async function handler(req, res) {
+  if (req.method === 'GET') {
+    try {
+      const db = getDb();
+      const snap = await db.collection('settings').doc('main').get();
+      if (!snap.exists) return res.status(200).json({ success: true, data: null });
+      return res.status(200).json({ success: true, data: { id: snap.id, ...snap.data() } });
+    } catch (err) {
+      return res.status(500).json({ success: false, error: err.message });
     }
-  } catch (err) {
-    return json(res, 500, { success: false, error: err instanceof Error ? err.message : 'Internal error' });
   }
+  if (req.method === 'PUT' || req.method === 'PATCH') {
+    try {
+      const db = getDb();
+      const data = req.body;
+      delete data.id;
+      delete data.createdAt;
+      await db.collection('settings').doc('main').set({ ...data, updatedAt: new Date().toISOString() }, { merge: true });
+      return res.status(200).json({ success: true, data: { id: 'main', ...data } });
+    } catch (err) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  }
+  return res.status(405).json({ success: false, error: 'Method not allowed' });
 }

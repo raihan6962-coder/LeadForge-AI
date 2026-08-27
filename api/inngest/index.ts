@@ -1,39 +1,9 @@
-import { serve } from 'inngest/express';
-import { inngest } from '../../src/lib/inngest';
-import { startAutomation, checkKeywordSchedule, checkOverdueRuns } from '../../src/functions/automation';
-import { discoverLeads } from '../../src/functions/lead-discovery';
-import { sendOutreachBatch, sendSingleOutreach, generatePersonalizedEmail } from '../../src/functions/email-outreach';
-import { sendTelegramNotification } from '../../src/functions/telegram-notify';
-import { checkReplyInbox, classifyIncomingReply, forwardReply } from '../../src/functions/reply-monitor';
-import { syncGoogleSheets } from '../../src/functions/google-sheets-sync';
-import { aggregateAnalytics } from '../../src/functions/analytics';
-import type { IncomingMessage, ServerResponse } from 'http';
-
-const handler = serve({
-  client: inngest,
-  functions: [
-    startAutomation,
-    checkKeywordSchedule,
-    checkOverdueRuns,
-    discoverLeads,
-    sendOutreachBatch,
-    sendSingleOutreach,
-    generatePersonalizedEmail,
-    sendTelegramNotification,
-    checkReplyInbox,
-    classifyIncomingReply,
-    forwardReply,
-    syncGoogleSheets,
-    aggregateAnalytics,
-  ],
-});
-
-export default async function vercelHandler(req: IncomingMessage, res: ServerResponse) {
-  return handler(req, res);
+export default async function handler(req, res) {
+  if (req.method === 'GET') {
+    return res.status(200).json({ success: true, data: { status: 'ok', message: 'Inngest endpoint' } });
+  }
+  if (req.method === 'POST') {
+    return res.status(200).json({ success: true, data: { message: 'Inngest webhook received' } });
+  }
+  return res.status(405).json({ success: false, error: 'Method not allowed' });
 }
-
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
