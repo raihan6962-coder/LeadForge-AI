@@ -12,15 +12,6 @@ import { useToast } from '@/contexts/ToastContext';
 const outreachStats = { queueSize: 0, sent: 0, pending: 0, failed: 0, deferred: 0, replies: 0, bounces: 0, sendingIntervalMin: 0, sendingIntervalMax: 0 };
 const senderAccounts: any[] = [];
 
-const pipelineStages = [
-  { label: 'Lead', icon: '◉', count: 18456, color: 'text-accent-400' },
-  { label: 'Personalized', icon: '✦', count: 312, color: 'text-accent-300' },
-  { label: 'Ready', icon: '✓', count: 234, color: 'text-success-400' },
-  { label: 'Sending', icon: '➤', count: 12, color: 'text-warning-400' },
-  { label: 'Sent', icon: '✉', count: 8421, color: 'text-success-400' },
-  { label: 'Reply / No Reply', icon: '↩', count: 677, color: 'text-accent-300' },
-];
-
 export function OutreachPage() {
   const { addToast } = useToast();
   const [intervalMin, setIntervalMin] = useState(outreachStats.sendingIntervalMin);
@@ -53,17 +44,23 @@ export function OutreachPage() {
 
       {/* Queue Pipeline */}
       <Card>
-        <CardHeader title="Outreach Pipeline" subtitle="Lead → Personalized → Ready → Sending → Sent → Reply" icon={<ArrowRight size={18} />} />
+        <CardHeader title="Outreach Pipeline" subtitle="Lead → Sent → Reply" icon={<ArrowRight size={18} />} />
         <div className="px-5 pb-5">
           <div className="flex items-center gap-1 overflow-x-auto no-scrollbar pb-2">
-            {pipelineStages.map((stage, i) => (
+            {[
+              { label: 'Queued', icon: '◉', count: outreachStats.queueSize, color: 'text-accent-400' },
+              { label: 'Sent', icon: '✉', count: outreachStats.sent, color: 'text-success-400' },
+              { label: 'Failed', icon: '✗', count: outreachStats.failed, color: 'text-error-400' },
+              { label: 'Deferred', icon: '⏳', count: outreachStats.deferred, color: 'text-warning-400' },
+              { label: 'Replies', icon: '↩', count: outreachStats.replies, color: 'text-accent-300' },
+            ].map((stage, i, arr) => (
               <div key={stage.label} className="flex items-center flex-shrink-0">
                 <div className="flex flex-col items-center gap-1 px-3 py-3 rounded-lg bg-white/5 border border-white/10 min-w-[100px]">
                   <span className={`text-lg ${stage.color}`}>{stage.icon}</span>
                   <span className="text-[10px] text-muted uppercase tracking-wider">{stage.label}</span>
                   <span className="text-sm text-primary font-semibold tabular-nums">{stage.count.toLocaleString()}</span>
                 </div>
-                {i < pipelineStages.length - 1 && <ArrowRight size={14} className="text-muted mx-0.5" />}
+                {i < arr.length - 1 && <ArrowRight size={14} className="text-muted mx-0.5" />}
               </div>
             ))}
           </div>

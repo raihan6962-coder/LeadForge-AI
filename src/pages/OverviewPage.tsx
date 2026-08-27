@@ -11,13 +11,6 @@ import { useToast } from '@/contexts/ToastContext';
 import { useApi } from '@/hooks/useApi';
 import type { AutomationPhase, KeywordRun } from '@/types';
 
-const currentJob = { elapsedSeconds: 0, progress: { current: 0, target: 1000 }, keyword: '', phase: 'discovery' as AutomationPhase, expectedCompletion: '', qualified: 0, duplicates: 0, rejected: 0 };
-const keywords: any[] = [];
-const automationRuns: any[] = [];
-const outreachStats = { queueSize: 0 };
-const leadDiscoveryChartData: any[] = [];
-const qualifiedLeadsChartData: any[] = [];
-
 const phases: { id: AutomationPhase; label: string; icon: string }[] = [
   { id: 'discovery', label: 'Discovery', icon: '🔍' },
   { id: 'qualification', label: 'Qualification', icon: '✓' },
@@ -38,20 +31,38 @@ function formatElapsed(seconds: number): string {
 export function OverviewPage() {
   const { navigate } = useNav();
   const { addToast } = useToast();
+
   const { data: apiRun } = useApi<{ running: boolean; run: KeywordRun | null }>('/api/automation', { running: false, run: null });
-  const [elapsed, setElapsed] = useState(currentJob.elapsedSeconds);
-  const [progress, setProgress] = useState(currentJob.progress.current);
+  const { data: analytics } = useApi<{ summary: { totalDiscovered: number; qualified: number; rejected: number; emailsSent: number; humanReplies: number; totalReplies: number; totalRuns: number; successfulRuns: number; failedRuns: number } }>('/api/analytics', { summary: { totalDiscovered: 0, qualified: 0, rejected: 0, emailsSent: 0, humanReplies: 0, totalReplies: 0, totalRuns: 0, successfulRuns: 0, failedRuns: 0 } });
+  const { data: outreach } = useApi<{ queueSize: number; sent: number; failed: number }>('/api/outreach', { queueSize: 0, sent: 0, failed: 0 });
+  const { data: keywordsData } = useApi<any[]>('/api/keywords', []);
+  const { data: runsData } = useApi<any[]>('/api/keyword_runs', []);
+
+  const summary = analytics?.summary || { totalDiscovered: 0, qualified: 0, rejected: 0, emailsSent: 0, humanReplies: 0, totalReplies: 0, totalRuns: 0, successfulRuns: 0, failedRuns: 0 };
+
+  const run = apiRun?.run;
+  const [elapsed, setElapsed] = useState(run ? Math.floor((Date.now() - new Date(run.startedAt).getTime()) / 1000) : 0);
+  const [progress, setProgress] = useState(run?.leadsDiscovered || 0);
 
   useEffect(() => {
+    if (run) {
+      setElapsed(Math.floor((Date.now() - new Date(run.startedAt).getTime()) / 1000));
+      setProgress(run.leadsDiscovered);
+    }
+  }, [run]);
+
+  useEffect(() => {
+    if (!apiRun?.running) return;
     const interval = setInterval(() => {
       setElapsed(prev => prev + 1);
-      setProgress(prev => Math.min(prev + Math.random() * 3, currentJob.progress.target));
+      setProgress(prev => Math.min(prev + Math.random() * 3, 1000));
     }, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [apiRun?.running]);
 
-  const todayKeyword = keywords.find(k => k.status === 'running') || keywords[26] || { keyword: '', status: 'scheduled' as const, qualifiedLeads: 0, targetLeads: 0, completion: 0 };
-  const recentRuns = automationRuns.slice(0, 4);
+  const keywords = keywordsData || [];
+  const todayKeyword = keywords.find((k: any) => k.status === 'running') || keywords[keywords.length - 1] || { keyword: '', status: 'scheduled', qualifiedLeads: 0, targetLeads: 0, completion: 0 };
+  const recentRuns = (runsData || []).slice(0, 4);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -67,35 +78,26 @@ export function OverviewPage() {
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-bold text-primary">System Online</h2>
-              <StatusBadge status="running" />
+              {apiRun?.running && <StatusBadge status="running" />}
             </div>
-            <p className="text-xs text-muted mt-0.5">Automation engine active — Day 27 of monthly cycle</p>
+            <p className="text-xs text-muted mt-0.5">{apiRun?.running ? `Running: ${run?.keyword}` : 'Automation engine idle'}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => navigate('automation')}
-            className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs text-secondary hover:bg-white/10 hover:text-primary transition-all flex items-center gap-1.5"
-          >
+          <button onClick={() => navigate('automation')} className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs text-secondary hover:bg-white/10 hover:text-primary transition-all flex items-center gap-1.5">
             <Zap size={13} /> Control Center
-          </button>
-          <button
-            onClick={() => addToast('info', 'System status', 'All systems operational')}
-            className="px-3 py-1.5 rounded-lg bg-accent-500/10 border border-accent-500/20 text-xs text-accent-300 hover:bg-accent-500/20 transition-all"
-          >
-            View Details
           </button>
         </div>
       </div>
 
       {/* KPI Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        <KPICard label="Leads Discovered" value="18,456" icon={<Users size={16} />} change="+12.4%" trend="up" color="accent" />
-        <KPICard label="Qualified Leads" value="12,834" icon={<CheckCircle2 size={16} />} change="+8.2%" trend="up" color="success" />
-        <KPICard label="Duplicates Rejected" value="4,167" icon={<Copy size={16} />} change="22.6%" trend="neutral" color="warning" />
-        <KPICard label="Emails Queued" value={outreachStats.queueSize} icon={<Mail size={16} />} change="Pending" trend="neutral" color="accent" />
-        <KPICard label="Emails Sent" value="8,421" icon={<Send size={16} />} change="+15.1%" trend="up" color="success" />
-        <KPICard label="Replies Received" value="677" icon={<MessageSquare size={16} />} change="+5.3%" trend="up" color="accent" />
+        <KPICard label="Leads Discovered" value={summary.totalDiscovered.toLocaleString()} icon={<Users size={16} />} color="accent" />
+        <KPICard label="Qualified Leads" value={summary.qualified.toLocaleString()} icon={<CheckCircle2 size={16} />} color="success" />
+        <KPICard label="Rejected" value={summary.rejected.toLocaleString()} icon={<Copy size={16} />} color="warning" />
+        <KPICard label="Emails Queued" value={outreach?.queueSize || 0} icon={<Mail size={16} />} color="accent" />
+        <KPICard label="Emails Sent" value={summary.emailsSent.toLocaleString()} icon={<Send size={16} />} color="success" />
+        <KPICard label="Replies" value={summary.totalReplies.toLocaleString()} icon={<MessageSquare size={16} />} color="accent" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -110,93 +112,89 @@ export function OverviewPage() {
                   </div>
                   <div>
                     <h3 className="text-sm font-semibold text-primary">Current Job</h3>
-                    <p className="text-xs text-muted">Running in real-time</p>
+                    <p className="text-xs text-muted">{apiRun?.running ? 'Running in real-time' : 'No active job'}</p>
                   </div>
                 </div>
-                <StatusBadge status="running" size="md" />
+                {apiRun?.running && <StatusBadge status="running" size="md" />}
               </div>
             </div>
 
             <div className="p-5 space-y-5">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div>
-                  <p className="text-[10px] text-muted uppercase tracking-wider mb-1">Keyword</p>
-                  <p className="text-sm text-primary font-medium">{currentJob.keyword}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-muted uppercase tracking-wider mb-1">Status</p>
-                  <p className="text-sm text-accent-300 font-medium capitalize">{currentJob.phase}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-muted uppercase tracking-wider mb-1">Elapsed</p>
-                  <p className="text-sm text-primary font-mono tabular-nums">{formatElapsed(Math.floor(elapsed))}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-muted uppercase tracking-wider mb-1">Expected Completion</p>
-                  <p className="text-sm text-primary font-medium">{currentJob.expectedCompletion}</p>
-                </div>
-              </div>
+              {run ? (
+                <>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                      <p className="text-[10px] text-muted uppercase tracking-wider mb-1">Keyword</p>
+                      <p className="text-sm text-primary font-medium">{run.keyword}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-muted uppercase tracking-wider mb-1">Status</p>
+                      <p className="text-sm text-accent-300 font-medium capitalize">{run.status}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-muted uppercase tracking-wider mb-1">Elapsed</p>
+                      <p className="text-sm text-primary font-mono tabular-nums">{formatElapsed(elapsed)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-muted uppercase tracking-wider mb-1">Leads Found</p>
+                      <p className="text-sm text-primary font-medium">{run.leadsDiscovered}</p>
+                    </div>
+                  </div>
 
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs text-secondary font-medium">Progress</span>
-                  <span className="text-xs text-muted tabular-nums">
-                    {Math.floor(progress).toLocaleString()} / {currentJob.progress.target.toLocaleString()}
-                  </span>
-                </div>
-                <ProgressBar value={Math.floor(progress)} max={currentJob.progress.target} color="accent" size="lg" showValue={false} />
-              </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs text-secondary font-medium">Progress</span>
+                      <span className="text-xs text-muted tabular-nums">{progress} / 1000</span>
+                    </div>
+                    <ProgressBar value={progress} max={1000} color="accent" size="lg" showValue={false} />
+                  </div>
 
-              <div className="grid grid-cols-3 gap-3">
-                <div className="card-base p-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <CheckCircle2 size={13} className="text-success-400" />
-                    <span className="text-[10px] text-muted uppercase">Qualified</span>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="card-base p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <CheckCircle2 size={13} className="text-success-400" />
+                        <span className="text-[10px] text-muted uppercase">Qualified</span>
+                      </div>
+                      <p className="text-lg font-bold text-success-400 tabular-nums">{run.qualified}</p>
+                    </div>
+                    <div className="card-base p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Copy size={13} className="text-warning-400" />
+                        <span className="text-[10px] text-muted uppercase">Duplicates</span>
+                      </div>
+                      <p className="text-lg font-bold text-warning-400 tabular-nums">{run.duplicates}</p>
+                    </div>
+                    <div className="card-base p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <AlertTriangle size={13} className="text-error-400" />
+                        <span className="text-[10px] text-muted uppercase">Rejected</span>
+                      </div>
+                      <p className="text-lg font-bold text-error-400 tabular-nums">{run.rejected || 0}</p>
+                    </div>
                   </div>
-                  <p className="text-lg font-bold text-success-400 tabular-nums">{currentJob.qualified}</p>
+                </>
+              ) : (
+                <div className="text-center py-8">
+                  <p className="text-sm text-muted">No active automation job</p>
+                  <p className="text-xs text-muted mt-1">Start an automation run from the Control Center</p>
                 </div>
-                <div className="card-base p-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Copy size={13} className="text-warning-400" />
-                    <span className="text-[10px] text-muted uppercase">Duplicates</span>
-                  </div>
-                  <p className="text-lg font-bold text-warning-400 tabular-nums">{currentJob.duplicates}</p>
-                </div>
-                <div className="card-base p-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <AlertTriangle size={13} className="text-error-400" />
-                    <span className="text-[10px] text-muted uppercase">Rejected</span>
-                  </div>
-                  <p className="text-lg font-bold text-error-400 tabular-nums">{currentJob.rejected}</p>
-                </div>
-              </div>
+              )}
 
               {/* Stage Pipeline */}
               <div>
                 <p className="text-xs text-secondary font-medium mb-3">Pipeline Stages</p>
                 <div className="flex items-center gap-1 overflow-x-auto no-scrollbar pb-1">
                   {phases.map((phase, i) => {
-                    const currentIdx = phases.findIndex(p => p.id === currentJob.phase);
+                    const currentIdx = run ? phases.findIndex(p => p.id === run.status) : -1;
                     const isComplete = i < currentIdx;
                     const isCurrent = i === currentIdx;
                     return (
                       <div key={phase.id} className="flex items-center flex-shrink-0">
-                        <div className={`
-                          flex flex-col items-center gap-1 px-2.5 py-2 rounded-lg border transition-all
-                          ${isComplete ? 'bg-success-500/10 border-success-500/20' : ''}
-                          ${isCurrent ? 'bg-accent-500/10 border-accent-500/30 glow-accent' : ''}
-                          ${!isComplete && !isCurrent ? 'bg-white/5 border-white/10' : ''}
-                        `}>
-                          <span className={`text-base ${isComplete ? 'text-success-400' : isCurrent ? 'text-accent-400' : 'text-muted'}`}>
-                            {isComplete ? '✓' : isCurrent ? '●' : phase.icon}
-                          </span>
-                          <span className={`text-[9px] font-medium whitespace-nowrap ${isComplete ? 'text-success-400' : isCurrent ? 'text-accent-300' : 'text-muted'}`}>
-                            {phase.label}
-                          </span>
+                        <div className={`flex flex-col items-center gap-1 px-2.5 py-2 rounded-lg border transition-all ${isComplete ? 'bg-success-500/10 border-success-500/20' : ''} ${isCurrent ? 'bg-accent-500/10 border-accent-500/30 glow-accent' : ''} ${!isComplete && !isCurrent ? 'bg-white/5 border-white/10' : ''}`}>
+                          <span className={`text-base ${isComplete ? 'text-success-400' : isCurrent ? 'text-accent-400' : 'text-muted'}`}>{isComplete ? '✓' : isCurrent ? '●' : phase.icon}</span>
+                          <span className={`text-[9px] font-medium whitespace-nowrap ${isComplete ? 'text-success-400' : isCurrent ? 'text-accent-300' : 'text-muted'}`}>{phase.label}</span>
                         </div>
-                        {i < phases.length - 1 && (
-                          <ArrowRight size={12} className={`mx-0.5 ${isComplete ? 'text-success-500/40' : 'text-white/10'}`} />
-                        )}
+                        {i < phases.length - 1 && <ArrowRight size={12} className={`mx-0.5 ${isComplete ? 'text-success-500/40' : 'text-white/10'}`} />}
                       </div>
                     );
                   })}
@@ -209,29 +207,26 @@ export function OverviewPage() {
         {/* Today's Keyword + Quick Stats */}
         <div className="space-y-6">
           <Card>
-            <CardHeader title="Today's Keyword" subtitle="Day 27 of 30" icon={<Target size={18} />} />
+            <CardHeader title="Today's Keyword" subtitle={`Day ${todayKeyword.day || '-'} of 30`} icon={<Target size={18} />} />
             <div className="px-5 pb-5">
               <div className="card-base p-4 mb-4">
                 <div className="flex items-center justify-between mb-3">
-                  <p className="text-sm text-primary font-semibold">{todayKeyword.keyword}</p>
-                  <StatusBadge status={todayKeyword.status} />
+                  <p className="text-sm text-primary font-semibold">{todayKeyword.keyword || 'No keyword'}</p>
+                  <StatusBadge status={todayKeyword.status || 'scheduled'} />
                 </div>
-                <ProgressBar value={todayKeyword.qualifiedLeads} max={todayKeyword.targetLeads} color="accent" size="md" label="Qualified Leads" />
+                <ProgressBar value={todayKeyword.qualifiedLeads || 0} max={todayKeyword.targetLeads || 1000} color="accent" size="md" label="Qualified Leads" />
                 <div className="grid grid-cols-2 gap-3 mt-3">
                   <div>
                     <p className="text-[10px] text-muted">Target</p>
-                    <p className="text-sm text-primary tabular-nums">{todayKeyword.targetLeads.toLocaleString()}</p>
+                    <p className="text-sm text-primary tabular-nums">{(todayKeyword.targetLeads || 0).toLocaleString()}</p>
                   </div>
                   <div>
                     <p className="text-[10px] text-muted">Completion</p>
-                    <p className="text-sm text-accent-300 tabular-nums">{todayKeyword.completion}%</p>
+                    <p className="text-sm text-accent-300 tabular-nums">{todayKeyword.completion || 0}%</p>
                   </div>
                 </div>
               </div>
-              <button
-                onClick={() => navigate('keywords')}
-                className="w-full text-xs text-accent-400 hover:text-accent-300 font-medium flex items-center justify-center gap-1.5 py-2"
-              >
+              <button onClick={() => navigate('keywords')} className="w-full text-xs text-accent-400 hover:text-accent-300 font-medium flex items-center justify-center gap-1.5 py-2">
                 View Full Schedule <ArrowRight size={13} />
               </button>
             </div>
@@ -241,20 +236,20 @@ export function OverviewPage() {
             <CardHeader title="Failed Operations" icon={<AlertTriangle size={18} />} />
             <div className="px-5 pb-5 space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-secondary">Email send failures</span>
-                <span className="text-sm text-error-400 font-medium tabular-nums">23</span>
+                <span className="text-xs text-secondary">Failed runs</span>
+                <span className="text-sm text-error-400 font-medium tabular-nums">{summary.failedRuns}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-xs text-secondary">AI generation failures</span>
-                <span className="text-sm text-error-400 font-medium tabular-nums">32</span>
+                <span className="text-xs text-secondary">Outreach failed</span>
+                <span className="text-sm text-error-400 font-medium tabular-nums">{outreach?.failed || 0}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-xs text-secondary">Integration errors</span>
-                <span className="text-sm text-error-400 font-medium tabular-nums">1</span>
+                <span className="text-xs text-secondary">Total runs</span>
+                <span className="text-sm text-primary font-medium tabular-nums">{summary.totalRuns}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-xs text-secondary">Bounced emails</span>
-                <span className="text-sm text-warning-400 font-medium tabular-nums">8</span>
+                <span className="text-xs text-secondary">Human replies</span>
+                <span className="text-sm text-success-400 font-medium tabular-nums">{summary.humanReplies}</span>
               </div>
             </div>
           </Card>
@@ -264,32 +259,17 @@ export function OverviewPage() {
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
-          <CardHeader title="Lead Discovery vs Qualified" subtitle="Last 7 days" icon={<Users size={18} />} />
-          <div className="px-5 pb-5">
-            <LineChart data={leadDiscoveryChartData} color="#06b6d4" height={180} showArea />
-            <div className="flex items-center gap-4 mt-3">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-sm bg-accent-500" />
-                <span className="text-xs text-muted">Discovered</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-sm bg-success-500" />
-                <span className="text-xs text-muted">Qualified</span>
-              </div>
-            </div>
-          </div>
-        </Card>
-
-        <Card>
-          <CardHeader title="Recent Automation Runs" subtitle="Last 4 jobs" icon={<Clock size={18} />} />
+          <CardHeader title="Recent Automation Runs" subtitle="Latest jobs" icon={<Clock size={18} />} />
           <div className="px-5 pb-5 space-y-2">
-            {recentRuns.map(run => (
+            {recentRuns.length === 0 ? (
+              <p className="text-xs text-muted text-center py-4">No automation runs yet</p>
+            ) : recentRuns.map((run: any) => (
               <div key={run.id} className="flex items-center justify-between p-3 card-base hover:border-white/20 transition-colors cursor-pointer" onClick={() => navigate('automation')}>
                 <div className="flex items-center gap-3 min-w-0">
                   <StatusBadge status={run.status} showDot={false} />
                   <div className="min-w-0">
                     <p className="text-xs text-primary font-medium truncate">{run.keyword}</p>
-                    <p className="text-[10px] text-muted">{run.id} · {new Date(run.startedAt).toLocaleDateString()}</p>
+                    <p className="text-[10px] text-muted">{run.id}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-4 text-xs">
@@ -297,12 +277,16 @@ export function OverviewPage() {
                     <p className="text-primary tabular-nums">{run.qualified}</p>
                     <p className="text-[10px] text-muted">qualified</p>
                   </div>
-                  {run.exceededExpected && (
-                    <span className="px-1.5 py-0.5 rounded text-[9px] bg-warning-500/10 text-warning-400 border border-warning-500/20">OVERRUN</span>
-                  )}
                 </div>
               </div>
             ))}
+          </div>
+        </Card>
+        <Card>
+          <CardHeader title="Lead Discovery vs Qualified" icon={<Users size={18} />} />
+          <div className="px-5 pb-5">
+            <LineChart data={[]} color="#06b6d4" height={180} showArea />
+            <p className="text-xs text-muted text-center mt-3">Chart data will appear as automation runs complete</p>
           </div>
         </Card>
       </div>
