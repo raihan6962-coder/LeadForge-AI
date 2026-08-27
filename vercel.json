@@ -28,8 +28,4 @@
       ]
     }
   ],
-  "env": {
-    "INNGEST_EVENT_KEY": "@inngest-event-key",
-    "INNGEST_SIGNING_KEY": "@inngest-signing-key"
-  }
 }
