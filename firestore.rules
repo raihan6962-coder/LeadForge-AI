@@ -1,83 +1,138 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Settings - admin only
-    match /settings/{document} {
-      allow read, write: if request.auth != null;
+
+    // Helper: check if user is authenticated
+    function isAuth() {
+      return request.auth != null;
     }
 
-    // Keywords - admin only
-    match /keywords/{document} {
-      allow read, write: if request.auth != null;
+    // Helper: check if user is admin
+    function isAdmin() {
+      return isAuth() && request.auth.token.email == 'admin@leadforge.ai';
     }
 
-    // Keyword Runs - admin only
-    match /keyword_runs/{document} {
-      allow read, write: if request.auth != null;
+    // SETTINGS - only authenticated users
+    match /settings/{doc} {
+      allow read: if isAuth();
+      allow write: if isAuth();
     }
 
-    // Leads - admin only
-    match /leads/{document} {
-      allow read, write: if request.auth != null;
+    // KEYWORDS - only authenticated users
+    match /keywords/{doc} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if isAuth();
     }
 
-    // Search Queries - admin only
-    match /search_queries/{document} {
-      allow read, write: if request.auth != null;
-    }
-
-    // Email Templates - admin only
-    match /email_templates/{document} {
-      allow read, write: if request.auth != null;
-    }
-
-    // Outreach Jobs - admin only
-    match /outreach_jobs/{document} {
-      allow read, write: if request.auth != null;
-    }
-
-    // Outreach Messages - admin only
-    match /outreach_messages/{document} {
-      allow read, write: if request.auth != null;
-    }
-
-    // Sending Accounts - admin only
-    match /sending_accounts/{document} {
-      allow read, write: if request.auth != null;
-    }
-
-    // Replies - admin only
-    match /replies/{document} {
-      allow read, write: if request.auth != null;
-    }
-
-    // Notifications - admin only
-    match /notifications/{document} {
-      allow read, write: if request.auth != null;
-    }
-
-    // Activity Logs - admin only, no delete
-    match /activity_logs/{document} {
-      allow read: if request.auth != null;
-      allow create, update: if request.auth != null;
+    // KEYWORD RUNS - only authenticated users
+    match /keyword_runs/{doc} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
       allow delete: if false;
     }
 
-    // Analytics Daily - admin only
-    match /analytics_daily/{document} {
-      allow read, write: if request.auth != null;
+    // LEADS - only authenticated users
+    match /leads/{doc} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if isAuth();
     }
 
-    // Integration Logs - admin only, no delete
-    match /integration_logs/{document} {
-      allow read: if request.auth != null;
-      allow create, update: if request.auth != null;
+    // SEARCH QUERIES - only authenticated users
+    match /search_queries/{doc} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if isAuth();
+    }
+
+    // EMAIL TEMPLATES - only authenticated users
+    match /email_templates/{doc} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if isAuth();
+    }
+
+    // OUTREACH JOBS - only authenticated users
+    match /outreach_jobs/{doc} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
       allow delete: if false;
     }
 
-    // Monthly Cycles - admin only
-    match /monthly_cycles/{document} {
-      allow read, write: if request.auth != null;
+    // OUTREACH MESSAGES - only authenticated users
+    match /outreach_messages/{doc} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if false;
+    }
+
+    // SENDING ACCOUNTS - only authenticated users
+    match /sending_accounts/{doc} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if isAuth();
+    }
+
+    // REPLIES - only authenticated users
+    match /replies/{doc} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if false;
+    }
+
+    // NOTIFICATIONS - only authenticated users
+    match /notifications/{doc} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if isAuth();
+    }
+
+    // ACTIVITY LOGS - append only (no delete)
+    match /activity_logs/{doc} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // ANALYTICS DAILY - only authenticated users
+    match /analytics_daily/{doc} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if false;
+    }
+
+    // INTEGRATION LOGS - append only
+    match /integration_logs/{doc} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // MONTHLY CYCLES - only authenticated users
+    match /monthly_cycles/{doc} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if false;
+    }
+
+    // DEFAULT: deny all
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
