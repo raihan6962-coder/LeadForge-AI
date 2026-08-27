@@ -19,14 +19,14 @@ export default async function handler(req, res) {
   try {
     if (req.method === 'GET') {
       const snap = await db.collection('outreach_messages').orderBy('createdAt', 'desc').limit(100).get();
-      const messages = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const queueSize = messages.filter(m => m.status === 'queued').length;
-      const sent = messages.filter(m => m.status === 'sent').length;
-      const failed = messages.filter(m => m.status === 'failed').length;
+      const messages = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+      const queueSize = messages.filter((m: any) => m.status === 'queued').length;
+      const sent = messages.filter((m: any) => m.status === 'sent').length;
+      const failed = messages.filter((m: any) => m.status === 'failed').length;
       return res.status(200).json({ success: true, data: { messages, queueSize, sent, failed } });
     }
     return res.status(405).json({ success: false, error: 'Method not allowed' });
-  } catch (err) {
+  } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });
   }
 }
