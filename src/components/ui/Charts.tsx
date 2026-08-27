@@ -19,6 +19,14 @@ export function LineChart({
   const chartW = width - padding.left - padding.right;
   const chartH = height - padding.top - padding.bottom;
 
+  if (!data || data.length === 0) {
+    return (
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full" style={{ height }} preserveAspectRatio="none">
+        <text x={width / 2} y={height / 2} textAnchor="middle" fontSize="12" fill="#6e7681">No data available</text>
+      </svg>
+    );
+  }
+
   const values = data.map(d => d.value);
   const maxVal = Math.max(...values, 1);
   const minVal = Math.min(...values, 0);
@@ -79,6 +87,9 @@ interface BarChartProps {
 }
 
 export function BarChart({ data, height = 200, color = '#06b6d4', horizontal = false, showValues = false }: BarChartProps) {
+  if (!data || data.length === 0) {
+    return <div className="w-full text-center text-secondary text-xs py-8">No data available</div>;
+  }
   const maxVal = Math.max(...data.map(d => d.value), 1);
 
   if (horizontal) {
@@ -145,6 +156,9 @@ interface DonutChartProps {
 }
 
 export function DonutChart({ data, size = 180, thickness = 28, centerLabel, centerValue }: DonutChartProps) {
+  if (!data || data.length === 0) {
+    return <div className="w-full text-center text-secondary text-xs py-8">No data available</div>;
+  }
   const total = data.reduce((sum, d) => sum + d.value, 0) || 1;
   const radius = (size - thickness) / 2;
   const circumference = 2 * Math.PI * radius;
@@ -201,6 +215,9 @@ interface HeatmapProps {
 }
 
 export function Heatmap({ data, xLabels, yLabels }: HeatmapProps) {
+  if (!data || data.length === 0 || (data[0] && data[0].length === 0)) {
+    return <div className="w-full text-center text-secondary text-xs py-8">No data available</div>;
+  }
   const max = Math.max(...data.flat(), 1);
   const days = yLabels || ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const hours = xLabels || Array.from({ length: 24 }, (_, i) => `${i}`);
