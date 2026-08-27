@@ -1,0 +1,83 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Settings - admin only
+    match /settings/{document} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Keywords - admin only
+    match /keywords/{document} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Keyword Runs - admin only
+    match /keyword_runs/{document} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Leads - admin only
+    match /leads/{document} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Search Queries - admin only
+    match /search_queries/{document} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Email Templates - admin only
+    match /email_templates/{document} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Outreach Jobs - admin only
+    match /outreach_jobs/{document} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Outreach Messages - admin only
+    match /outreach_messages/{document} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Sending Accounts - admin only
+    match /sending_accounts/{document} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Replies - admin only
+    match /replies/{document} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Notifications - admin only
+    match /notifications/{document} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Activity Logs - admin only, no delete
+    match /activity_logs/{document} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null;
+      allow delete: if false;
+    }
+
+    // Analytics Daily - admin only
+    match /analytics_daily/{document} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Integration Logs - admin only, no delete
+    match /integration_logs/{document} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null;
+      allow delete: if false;
+    }
+
+    // Monthly Cycles - admin only
+    match /monthly_cycles/{document} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
