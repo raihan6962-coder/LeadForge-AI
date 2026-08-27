@@ -2,7 +2,7 @@ import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
 function getDb() {
-  if (getApps().length === 0) {
+  if (!getApps().length) {
     initializeApp({
       credential: cert({
         projectId: process.env.FIREBASE_PROJECT_ID,
@@ -16,26 +16,42 @@ function getDb() {
 
 export default async function handler(req, res) {
   const db = getDb();
-  try {
-    if (req.method === 'GET') {
-      const snap = await db.collection('email_templates').orderBy('keyword', 'asc').get();
-      return res.status(200).json({ success: true, data: snap.docs.map(d => ({ id: d.id, ...d.data() })) });
+
+  if (req.method === 'GET') {
+    try {
+      const snapshot = await db.collection('email_templates').get();
+      const templates = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      return res.status(200).json({ success: true, data: templates });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: error.message });
     }
-    if (req.method === 'POST') {
-      const data = req.body;
-      delete data.id;
-      const ref = await db.collection('email_templates').add({ ...data, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
-      return res.status(201).json({ success: true, data: { id: ref.id, ...data } });
-    }
-    if (req.method === 'PUT') {
-      const { id, ...updates } = req.body;
-      if (!id) return res.status(400).json({ success: false, error: 'Missing id' });
-      delete updates.createdAt;
-      await db.collection('email_templates').doc(id).set({ ...updates, updatedAt: new Date().toISOString() }, { merge: true });
-      return res.status(200).json({ success: true, data: { id, ...updates } });
-    }
-    return res.status(405).json({ success: false, error: 'Method not allowed' });
-  } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
   }
+
+  if (req.method === 'POST') {
+    try {
+      const newTemplate = {
+        ...req.body,
+        createdAt: new Date().toISOString(),
+      };
+      const docRef = await db.collection('email_templates').add(newTemplate);
+      return res.status(201).json({ success: true, data: { id: docRef.id, ...newTemplate } });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  if (req.method === 'PUT') {
+    try {
+      const { id, ...updateData } = req.body;
+      if (!id) {
+        return res.status(400).json({ success: false, error: 'Missing template id' });
+      }
+      await db.collection('email_templates').doc(id).update(updateData);
+      return res.status(200).json({ success: true, data: { id, ...updateData } });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  return res.status(405).json({ success: false, error: 'Method not allowed' });
 }

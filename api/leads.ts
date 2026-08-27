@@ -2,7 +2,7 @@ import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
 function getDb() {
-  if (getApps().length === 0) {
+  if (!getApps().length) {
     initializeApp({
       credential: cert({
         projectId: process.env.FIREBASE_PROJECT_ID,
@@ -16,39 +16,56 @@ function getDb() {
 
 export default async function handler(req, res) {
   const db = getDb();
-  try {
-    if (req.method === 'GET') {
-      const { keywordId, status, pageSize = '50' } = req.query;
-      let q = db.collection('leads').orderBy('createdAt', 'desc');
-      if (keywordId) q = q.where('keywordId', '==', keywordId);
-      if (status) q = q.where('qualificationStatus', '==', status);
-      q = q.limit(Number(pageSize));
-      const snap = await q.get();
-      const leads = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  if (req.method === 'GET') {
+    try {
+      const snapshot = await db
+        .collection('leads')
+        .orderBy('createdAt', 'desc')
+        .limit(200)
+        .get();
+      const leads = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
       return res.status(200).json({ success: true, data: leads });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: error.message });
     }
-    if (req.method === 'POST') {
-      const data = req.body;
-      delete data.id;
-      const normalizedEmail = data.email?.toLowerCase().trim();
-      const dedupeKey = normalizedEmail || `${data.developer?.toLowerCase()}:${data.appName?.toLowerCase()}`;
-      const existing = await db.collection('leads').where('dedupeKey', '==', dedupeKey).limit(1).get();
-      if (!existing.empty) {
-        const existingDoc = existing.docs[0];
-        await db.collection('leads').doc(existingDoc.id).set({
-          lastSeenAt: new Date().toISOString(),
-          occurrenceCount: (existingDoc.data().occurrenceCount || 0) + 1,
-        }, { merge: true });
-        return res.status(200).json({ success: true, data: { id: existingDoc.id, duplicate: true } });
-      }
-      const ref = await db.collection('leads').add({
-        ...data, dedupeKey, occurrenceCount: 1,
-        createdAt: new Date().toISOString(), lastSeenAt: new Date().toISOString(),
-      });
-      return res.status(201).json({ success: true, data: { id: ref.id, duplicate: false } });
-    }
-    return res.status(405).json({ success: false, error: 'Method not allowed' });
-  } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
   }
+
+  if (req.method === 'POST') {
+    try {
+      if (req.body.email) {
+        const existing = await db
+          .collection('leads')
+          .where('email', '==', req.body.email)
+          .limit(1)
+          .get();
+        if (!existing.empty) {
+          return res.status(409).json({ success: false, error: 'Lead with this email already exists' });
+        }
+      }
+      const newLead = {
+        ...req.body,
+        createdAt: new Date().toISOString(),
+      };
+      const docRef = await db.collection('leads').add(newLead);
+      return res.status(201).json({ success: true, data: { id: docRef.id, ...newLead } });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  if (req.method === 'PUT') {
+    try {
+      const { id, ...updateData } = req.body;
+      if (!id) {
+        return res.status(400).json({ success: false, error: 'Missing lead id' });
+      }
+      await db.collection('leads').doc(id).update(updateData);
+      return res.status(200).json({ success: true, data: { id, ...updateData } });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  return res.status(405).json({ success: false, error: 'Method not allowed' });
 }

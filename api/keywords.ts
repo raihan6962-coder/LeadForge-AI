@@ -2,7 +2,7 @@ import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
 function getDb() {
-  if (getApps().length === 0) {
+  if (!getApps().length) {
     initializeApp({
       credential: cert({
         projectId: process.env.FIREBASE_PROJECT_ID,
@@ -16,27 +16,59 @@ function getDb() {
 
 export default async function handler(req, res) {
   const db = getDb();
-  try {
-    if (req.method === 'GET') {
-      const snap = await db.collection('keywords').orderBy('day', 'asc').get();
-      const keywords = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  if (req.method === 'GET') {
+    try {
+      const snapshot = await db
+        .collection('keywords')
+        .orderBy('createdAt', 'desc')
+        .get();
+      const keywords = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
       return res.status(200).json({ success: true, data: keywords });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: error.message });
     }
-    if (req.method === 'POST') {
-      const data = req.body;
-      delete data.id;
-      const ref = await db.collection('keywords').add({ ...data, createdAt: new Date().toISOString() });
-      return res.status(201).json({ success: true, data: { id: ref.id, ...data } });
-    }
-    if (req.method === 'PUT') {
-      const { id, ...updates } = req.body;
-      if (!id) return res.status(400).json({ success: false, error: 'Missing id' });
-      delete updates.createdAt;
-      await db.collection('keywords').doc(id).set({ ...updates, updatedAt: new Date().toISOString() }, { merge: true });
-      return res.status(200).json({ success: true, data: { id, ...updates } });
-    }
-    return res.status(405).json({ success: false, error: 'Method not allowed' });
-  } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
   }
+
+  if (req.method === 'POST') {
+    try {
+      const newKeyword = {
+        ...req.body,
+        status: 'active',
+        createdAt: new Date().toISOString(),
+      };
+      const docRef = await db.collection('keywords').add(newKeyword);
+      return res.status(201).json({ success: true, data: { id: docRef.id, ...newKeyword } });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  if (req.method === 'PUT') {
+    try {
+      const { id, ...updateData } = req.body;
+      if (!id) {
+        return res.status(400).json({ success: false, error: 'Missing keyword id' });
+      }
+      await db.collection('keywords').doc(id).update(updateData);
+      return res.status(200).json({ success: true, data: { id, ...updateData } });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  if (req.method === 'DELETE') {
+    try {
+      const { id } = req.query;
+      if (!id) {
+        return res.status(400).json({ success: false, error: 'Missing keyword id' });
+      }
+      await db.collection('keywords').doc(id).delete();
+      return res.status(200).json({ success: true, data: { message: 'Keyword deleted' } });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  return res.status(405).json({ success: false, error: 'Method not allowed' });
 }

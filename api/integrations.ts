@@ -1,61 +1,46 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { initializeApp, cert, getApps } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
 
-function json(res: VercelResponse, status: number, data: unknown) {
-  return res.status(status).json(data);
+function getDb() {
+  if (!getApps().length) {
+    initializeApp({
+      credential: cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      }),
+    });
+  }
+  return getFirestore();
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'POST') {
-    return json(res, 405, { success: false, error: 'Method not allowed' });
+export default async function handler(req, res) {
+  const db = getDb();
+
+  if (req.method === 'GET') {
+    try {
+      const doc = await db.collection('settings').doc('main').get();
+      if (!doc.exists) {
+        return res.status(200).json({ success: true, data: { integrations: {} } });
+      }
+      const data = doc.data();
+      return res.status(200).json({ success: true, data: { integrations: data.integrations || {} } });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
   }
 
-  const { action, url } = req.body;
-
-  try {
-    if (action === 'test-google-sheets') {
-      if (!url) return json(res, 400, { success: false, error: 'Missing URL' });
-
-      const res2 = await fetch(url, { signal: AbortSignal.timeout(15000) });
-      if (!res2.ok) {
-        return json(res, 500, { success: false, error: `HTTP ${res2.status}: ${res2.statusText}` });
-      }
-
-      const data = await res2.json();
-      return json(res, 200, {
-        success: true,
-        data: {
-          connected: true,
-          rowCount: Array.isArray(data) ? data.length : 0,
-          sample: Array.isArray(data) ? data.slice(0, 3) : [],
-        },
-      });
+  if (req.method === 'PUT') {
+    try {
+      await db.collection('settings').doc('main').set(
+        { integrations: req.body },
+        { merge: true }
+      );
+      return res.status(200).json({ success: true, data: { message: 'Integrations updated' } });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: error.message });
     }
-
-    if (action === 'test-telegram') {
-      const { botToken, chatId } = req.body;
-      if (!botToken || !chatId) {
-        return json(res, 400, { success: false, error: 'Missing botToken or chatId' });
-      }
-
-      const url = `https://api.telegram.org/bot${botToken}/getMe`;
-      const res2 = await fetch(url, { signal: AbortSignal.timeout(10000) });
-      if (!res2.ok) {
-        return json(res, 500, { success: false, error: 'Invalid bot token' });
-      }
-
-      const botData = await res2.json();
-      return json(res, 200, {
-        success: true,
-        data: {
-          connected: true,
-          botName: botData.result?.first_name,
-          botUsername: botData.result?.username,
-        },
-      });
-    }
-
-    return json(res, 400, { success: false, error: 'Invalid action' });
-  } catch (err) {
-    return json(res, 500, { success: false, error: err instanceof Error ? err.message : 'Internal error' });
   }
+
+  return res.status(405).json({ success: false, error: 'Method not allowed' });
 }

@@ -2,7 +2,7 @@ import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
 function getDb() {
-  if (getApps().length === 0) {
+  if (!getApps().length) {
     initializeApp({
       credential: cert({
         projectId: process.env.FIREBASE_PROJECT_ID,
@@ -16,17 +16,37 @@ function getDb() {
 
 export default async function handler(req, res) {
   const db = getDb();
-  try {
-    if (req.method === 'GET') {
-      const snap = await db.collection('outreach_messages').orderBy('createdAt', 'desc').limit(100).get();
-      const messages = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-      const queueSize = messages.filter((m: any) => m.status === 'queued').length;
-      const sent = messages.filter((m: any) => m.status === 'sent').length;
-      const failed = messages.filter((m: any) => m.status === 'failed').length;
-      return res.status(200).json({ success: true, data: { messages, queueSize, sent, failed } });
-    }
+
+  if (req.method !== 'GET') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+  }
+
+  try {
+    const snapshot = await db
+      .collection('outreach_messages')
+      .orderBy('createdAt', 'desc')
+      .limit(100)
+      .get();
+
+    const messages = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+
+    let queueSize = 0;
+    let sent = 0;
+    let failed = 0;
+    for (const msg of messages) {
+      if (msg.status === 'queued') queueSize++;
+      else if (msg.status === 'sent') sent++;
+      else if (msg.status === 'failed') failed++;
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        messages,
+        stats: { queueSize, sent, failed },
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
   }
 }

@@ -2,7 +2,7 @@ import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
 function getDb() {
-  if (getApps().length === 0) {
+  if (!getApps().length) {
     initializeApp({
       credential: cert({
         projectId: process.env.FIREBASE_PROJECT_ID,
@@ -16,19 +16,33 @@ function getDb() {
 
 export default async function handler(req, res) {
   const db = getDb();
-  try {
-    if (req.method === 'GET') {
-      const snap = await db.collection('replies').orderBy('receivedAt', 'desc').limit(100).get();
-      return res.status(200).json({ success: true, data: snap.docs.map(d => ({ id: d.id, ...d.data() })) });
+
+  if (req.method === 'GET') {
+    try {
+      const snapshot = await db
+        .collection('replies')
+        .orderBy('receivedAt', 'desc')
+        .limit(100)
+        .get();
+      const replies = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      return res.status(200).json({ success: true, data: replies });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: error.message });
     }
-    if (req.method === 'POST') {
-      const data = req.body;
-      delete data.id;
-      const ref = await db.collection('replies').add({ ...data, createdAt: new Date().toISOString() });
-      return res.status(201).json({ success: true, data: { id: ref.id, ...data } });
-    }
-    return res.status(405).json({ success: false, error: 'Method not allowed' });
-  } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
   }
+
+  if (req.method === 'POST') {
+    try {
+      const newReply = {
+        ...req.body,
+        receivedAt: new Date().toISOString(),
+      };
+      const docRef = await db.collection('replies').add(newReply);
+      return res.status(201).json({ success: true, data: { id: docRef.id, ...newReply } });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  return res.status(405).json({ success: false, error: 'Method not allowed' });
 }
