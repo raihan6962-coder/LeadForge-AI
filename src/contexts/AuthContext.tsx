@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 
 interface AuthContextValue {
@@ -16,35 +17,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!auth) {
-      setUser(null);
-      setLoading(false);
-      return;
-    }
-
-    import('firebase/auth').then(({ onAuthStateChanged }) => {
-      const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-        if (firebaseUser) {
-          setUser({
-            email: firebaseUser.email || '',
-            name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Admin',
-            role: 'System Administrator',
-          });
-        } else {
-          setUser(null);
-        }
-        setLoading(false);
-      });
-      return () => unsubscribe();
-    }).catch(() => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (firebaseUser) {
+        setUser({
+          email: firebaseUser.email || '',
+          name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Admin',
+          role: 'System Administrator',
+        });
+      } else {
+        setUser(null);
+      }
       setLoading(false);
     });
+    return () => unsubscribe();
   }, []);
 
   const login = async (email: string, password: string) => {
-    if (!auth) return { success: false, error: 'Firebase not configured.' };
     try {
-      const { signInWithEmailAndPassword } = await import('firebase/auth');
       await signInWithEmailAndPassword(auth, email, password);
       return { success: true };
     } catch (error: unknown) {
@@ -55,6 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         'auth/invalid-email': 'Invalid email address.',
         'auth/too-many-requests': 'Too many attempts. Please try again later.',
         'auth/invalid-credential': 'Invalid email or password.',
+        'auth/operation-not-allowed': 'Email/password sign-in is not enabled in Firebase Console.',
       };
       return {
         success: false,
@@ -64,13 +54,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
-    if (!auth) return;
     try {
-      const { signOut } = await import('firebase/auth');
       await signOut(auth);
-    } catch {
-      // Sign out failed silently
-    }
+    } catch {}
   };
 
   return (
