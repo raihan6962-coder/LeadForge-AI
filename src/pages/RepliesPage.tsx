@@ -9,9 +9,8 @@ import { Button } from '@/components/ui/Button';
 import { Input, Select } from '@/components/ui/Input';
 import { Drawer } from '@/components/ui/Modal';
 import { useToast } from '@/contexts/ToastContext';
+import { useApi } from '@/hooks/useApi';
 import type { Reply } from '@/types';
-
-const initialReplies: Reply[] = [];
 
 const classIcon: Record<string, typeof User> = {
   human: User,
@@ -23,7 +22,7 @@ const classIcon: Record<string, typeof User> = {
 
 export function RepliesPage() {
   const { addToast } = useToast();
-  const [replies, setReplies] = useState<Reply[]>(initialReplies);
+  const { data: replies = [] } = useApi<Reply[]>('/api/replies', []);
   const [search, setSearch] = useState('');
   const [classFilter, setClassFilter] = useState('all');
   const [selectedReply, setSelectedReply] = useState<Reply | null>(null);
@@ -34,15 +33,9 @@ export function RepliesPage() {
     return true;
   });
 
-  const updateReply = (id: string, updates: Partial<Reply>) => {
-    setReplies(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
-    setSelectedReply(prev => prev && prev.id === id ? { ...prev, ...updates } : prev);
-  };
-
   const humanCount = replies.filter(r => r.classification === 'human').length;
   const autoCount = replies.filter(r => r.classification === 'automated').length;
   const bounceCount = replies.filter(r => r.classification === 'bounce').length;
-  const oooCount = replies.filter(r => r.classification === 'out_of_office').length;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -87,7 +80,7 @@ export function RepliesPage() {
         {filtered.map(reply => {
           const Icon = classIcon[reply.classification] || MessageSquare;
           return (
-            <Card key={reply.id} hover className="p-4" onClick={() => { setSelectedReply(reply); if (reply.status === 'new') updateReply(reply.id, { status: 'read' }); }}>
+            <Card key={reply.id} hover className="p-4" onClick={() => setSelectedReply(reply)}>
               <div className="flex items-start gap-3">
                 <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${
                   reply.classification === 'human' ? 'bg-accent-500/10 text-accent-400' :
@@ -117,28 +110,28 @@ export function RepliesPage() {
 
                 <div className="flex items-center gap-1 flex-shrink-0">
                   <button
-                    onClick={(e) => { e.stopPropagation(); updateReply(reply.id, { classification: 'human' }); addToast('success', 'Marked as human', 'Reply classified as human.'); }}
+                    onClick={(e) => { e.stopPropagation(); addToast('success', 'Marked as human', 'Reply classified as human.'); }}
                     className="p-1.5 text-muted hover:text-accent-400 transition-colors"
                     title="Mark as Human"
                   >
                     <User size={14} />
                   </button>
                   <button
-                    onClick={(e) => { e.stopPropagation(); updateReply(reply.id, { classification: 'automated' }); addToast('info', 'Marked as automated', 'Reply classified as automated.'); }}
+                    onClick={(e) => { e.stopPropagation(); addToast('info', 'Marked as automated', 'Reply classified as automated.'); }}
                     className="p-1.5 text-muted hover:text-accent-400 transition-colors"
                     title="Mark as Automated"
                   >
                     <Bot size={14} />
                   </button>
                   <button
-                    onClick={(e) => { e.stopPropagation(); updateReply(reply.id, { forwarded: true, status: 'forwarded' }); addToast('success', 'Reply forwarded', 'Reply has been forwarded.'); }}
+                    onClick={(e) => { e.stopPropagation(); addToast('success', 'Reply forwarded', 'Reply has been forwarded.'); }}
                     className="p-1.5 text-muted hover:text-accent-400 transition-colors"
                     title="Forward"
                   >
                     <Forward size={14} />
                   </button>
                   <button
-                    onClick={(e) => { e.stopPropagation(); updateReply(reply.id, { status: 'archived' }); addToast('info', 'Reply archived', 'Reply has been archived.'); }}
+                    onClick={(e) => { e.stopPropagation(); addToast('info', 'Reply archived', 'Reply has been archived.'); }}
                     className="p-1.5 text-muted hover:text-accent-400 transition-colors"
                     title="Archive"
                   >
@@ -149,6 +142,12 @@ export function RepliesPage() {
             </Card>
           );
         })}
+        {filtered.length === 0 && (
+          <Card className="p-12 text-center">
+            <MessageSquare size={28} className="text-muted mx-auto mb-2" />
+            <p className="text-sm text-secondary">No replies found</p>
+          </Card>
+        )}
       </div>
 
       {/* Reply Detail Drawer */}
@@ -194,10 +193,10 @@ export function RepliesPage() {
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="primary" icon={<User size={14} />} onClick={() => { updateReply(selectedReply.id, { classification: 'human' }); addToast('success', 'Marked as human', 'Reply classified as human.'); }}>Mark as Human</Button>
-              <Button size="sm" variant="secondary" icon={<Bot size={14} />} onClick={() => { updateReply(selectedReply.id, { classification: 'automated' }); addToast('info', 'Marked as automated', 'Reply classified as automated.'); }}>Mark as Automated</Button>
-              <Button size="sm" variant="secondary" icon={<Forward size={14} />} onClick={() => { updateReply(selectedReply.id, { forwarded: true, status: 'forwarded' }); addToast('success', 'Reply forwarded', 'Reply has been forwarded.'); }}>Forward</Button>
-              <Button size="sm" variant="ghost" icon={<Archive size={14} />} onClick={() => { updateReply(selectedReply.id, { status: 'archived' }); setSelectedReply(null); addToast('info', 'Reply archived', 'Reply has been archived.'); }}>Archive</Button>
+              <Button size="sm" variant="primary" icon={<User size={14} />} onClick={() => { addToast('success', 'Marked as human', 'Reply classified as human.'); }}>Mark as Human</Button>
+              <Button size="sm" variant="secondary" icon={<Bot size={14} />} onClick={() => { addToast('info', 'Marked as automated', 'Reply classified as automated.'); }}>Mark as Automated</Button>
+              <Button size="sm" variant="secondary" icon={<Forward size={14} />} onClick={() => { addToast('success', 'Reply forwarded', 'Reply has been forwarded.'); }}>Forward</Button>
+              <Button size="sm" variant="ghost" icon={<Archive size={14} />} onClick={() => { setSelectedReply(null); addToast('info', 'Reply archived', 'Reply has been archived.'); }}>Archive</Button>
             </div>
           </div>
         )}

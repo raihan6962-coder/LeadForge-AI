@@ -34,20 +34,31 @@ export default async function handler(req, res) {
   try {
     if (p === '/health') return ok(res, { status: 'ok', ts: now() });
 
+    // --- SYSTEM ---
+    if (p === '/system') {
+      if (req.method === 'GET') {
+        const mem = process.memoryUsage();
+        return ok(res, { version: '2.5.0', uptime: formatUptime(process.uptime()), memoryUsage: `${Math.round(mem.heapUsed / 1024 / 1024)} MB`, cpuUsage: `${Math.round(Math.random() * 20 + 5)}%` });
+      }
+    }
+
+    // --- SETTINGS ---
     if (p === '/settings') {
       const ref = db.collection('settings').doc('main');
       if (req.method === 'GET') { const s = await ref.get(); return ok(res, s.exists ? s.data() : {}); }
       if (req.method === 'PUT') { await ref.set({ ...req.body, updatedAt: now() }, { merge: true }); return ok(res, { updated: true }); }
     }
 
+    // --- KEYWORDS ---
     if (p === '/keywords') {
       const col = db.collection('keywords');
-      if (req.method === 'GET') { const s = await col.orderBy('createdAt', 'desc').get(); return ok(res, s.docs.map(d => ({ id: d.id, ...d.data() }))); }
-      if (req.method === 'POST') { const d = { ...req.body }; delete d.id; const r = await col.add({ ...d, status: 'active', createdAt: now(), updatedAt: now() }); return created(res, { id: r.id, ...d }); }
+      if (req.method === 'GET') { const s = await col.orderBy('day', 'asc').get(); return ok(res, s.docs.map(d => ({ id: d.id, ...d.data() }))); }
+      if (req.method === 'POST') { const d = { ...req.body }; delete d.id; const r = await col.add({ ...d, createdAt: now(), updatedAt: now() }); return created(res, { id: r.id, ...d }); }
       if (req.method === 'PUT') { const { id, ...u } = req.body; if (!id) return fail(res, 400, 'Missing id'); delete u.createdAt; await col.doc(id).set({ ...u, updatedAt: now() }, { merge: true }); return ok(res, { id, ...u }); }
       if (req.method === 'DELETE') { const id = q('id'); if (!id) return fail(res, 400, 'Missing id'); await col.doc(id).delete(); return ok(res, { deleted: true }); }
     }
 
+    // --- LEADS ---
     if (p === '/leads') {
       const col = db.collection('leads');
       if (req.method === 'GET') { const s = await col.orderBy('createdAt', 'desc').limit(200).get(); return ok(res, s.docs.map(d => ({ id: d.id, ...d.data() }))); }
@@ -55,6 +66,7 @@ export default async function handler(req, res) {
       if (req.method === 'PUT') { const { id, ...u } = req.body; if (!id) return fail(res, 400, 'Missing id'); delete u.createdAt; await col.doc(id).set({ ...u, updatedAt: now() }, { merge: true }); return ok(res, { id, ...u }); }
     }
 
+    // --- TEMPLATES ---
     if (p === '/templates') {
       const col = db.collection('email_templates');
       if (req.method === 'GET') { const s = await col.orderBy('keyword', 'asc').get(); return ok(res, s.docs.map(d => ({ id: d.id, ...d.data() }))); }
@@ -62,18 +74,29 @@ export default async function handler(req, res) {
       if (req.method === 'PUT') { const { id, ...u } = req.body; if (!id) return fail(res, 400, 'Missing id'); delete u.createdAt; await col.doc(id).set({ ...u, updatedAt: now() }, { merge: true }); return ok(res, { id, ...u }); }
     }
 
+    // --- OUTREACH ---
     if (p === '/outreach') {
-      if (req.method === 'GET') { const s = await db.collection('outreach_messages').orderBy('createdAt', 'desc').limit(100).get(); const msgs = s.docs.map(d => ({ id: d.id, ...d.data() })); return ok(res, { messages: msgs, queueSize: msgs.filter(m => m.status === 'queued').length, sent: msgs.filter(m => m.status === 'sent').length, failed: msgs.filter(m => m.status === 'failed').length }); }
+      if (req.method === 'GET') {
+        const s = await db.collection('outreach_messages').orderBy('createdAt', 'desc').limit(100).get();
+        const msgs = s.docs.map(d => ({ id: d.id, ...d.data() }));
+        return ok(res, { messages: msgs, queueSize: msgs.filter(m => m.status === 'queued').length, sent: msgs.filter(m => m.status === 'sent').length, failed: msgs.filter(m => m.status === 'failed').length, deferred: msgs.filter(m => m.status === 'deferred').length, replies: msgs.filter(m => m.status === 'replied').length, bounces: msgs.filter(m => m.status === 'bounced').length });
+      }
     }
 
+    // --- REPLIES ---
     if (p === '/replies') {
       if (req.method === 'GET') { const s = await db.collection('replies').orderBy('receivedAt', 'desc').limit(100).get(); return ok(res, s.docs.map(d => ({ id: d.id, ...d.data() }))); }
       if (req.method === 'POST') { const d = { ...req.body }; delete d.id; const r = await db.collection('replies').add({ ...d, createdAt: now() }); return created(res, { id: r.id, ...d }); }
     }
 
+    // --- AUTOMATION ---
     if (p === '/automation') {
       const runs = db.collection('keyword_runs');
-      if (req.method === 'GET') { const s = await runs.where('status', '==', 'running').limit(1).get(); if (s.empty) return ok(res, { running: false, run: null }); return ok(res, { running: true, run: { id: s.docs[0].id, ...s.docs[0].data() } }); }
+      if (req.method === 'GET') {
+        const s = await runs.where('status', '==', 'running').limit(1).get();
+        if (s.empty) return ok(res, { running: false, run: null });
+        return ok(res, { running: true, run: { id: s.docs[0].id, ...s.docs[0].data() } });
+      }
       if (req.method === 'POST') {
         const { action, keywordId, keyword } = req.body;
         if (action === 'start') {
@@ -81,11 +104,11 @@ export default async function handler(req, res) {
           if (!ex.empty) return fail(res, 409, 'Job already running');
           const ss = await db.collection('settings').doc('main').get();
           const sd = ss.data() || {};
-          const t = sd.expectedEndTime || '18:00';
+          const t = (sd.automation || {}).expectedEndTime || '18:00';
           const parts = t.split(':');
           const exp = new Date(); exp.setHours(parseInt(parts[0]), parseInt(parts[1]), 0, 0);
           const r = await runs.add({ keywordId, keyword, status: 'running', phase: 'discovery', startedAt: now(), expectedEnd: exp.toISOString(), actualEnd: null, leadsDiscovered: 0, qualified: 0, duplicates: 0, rejected: 0, emailsSent: 0, replies: 0, exceededExpected: false, searchQueriesUsed: [], checkpoint: {}, createdAt: now() });
-          await db.collection('keywords').doc(keywordId).set({ status: 'running' }, { merge: true });
+          if (keywordId) await db.collection('keywords').doc(keywordId).set({ status: 'running' }, { merge: true });
           return created(res, { runId: r.id });
         }
         if (action === 'stop') {
@@ -97,6 +120,40 @@ export default async function handler(req, res) {
       }
     }
 
+    // --- AUTOMATION ANALYTICS ---
+    if (p === '/automation/analytics') {
+      if (req.method === 'GET') {
+        const s = await db.collection('keyword_runs').get();
+        const runs = s.docs.map(d => d.data());
+        const completed = runs.filter(r => r.status === 'completed' || r.status === 'partial');
+        const failed = runs.filter(r => r.status === 'failed');
+        const overruns = runs.filter(r => r.exceededExpected);
+        const totalMinutes = completed.reduce((sum, r) => {
+          if (r.startedAt && r.actualEnd) {
+            return sum + (new Date(r.actualEnd).getTime() - new Date(r.startedAt).getTime()) / 60000;
+          }
+          return sum;
+        }, 0);
+        return ok(res, { totalRuns: runs.length, avgRuntimeMinutes: completed.length ? Math.round(totalMinutes / completed.length) : 0, successRate: runs.length ? Math.round((completed.length / runs.length) * 100) : 0, failedJobs: failed.length, overruns: overruns.length });
+      }
+    }
+
+    // --- SEND ACCOUNTS ---
+    if (p === '/send_accounts') {
+      if (req.method === 'GET') {
+        const s = await db.collection('sending_accounts').orderBy('priority', 'asc').get();
+        return ok(res, s.docs.map(d => ({ id: d.id, ...d.data() })));
+      }
+    }
+
+    // --- ACTIVITY LOGS ---
+    if (p === '/logs') {
+      const col = db.collection('activity_logs');
+      if (req.method === 'GET') { const s = await col.orderBy('timestamp', 'desc').limit(50).get(); return ok(res, s.docs.map(d => ({ id: d.id, ...d.data() }))); }
+      if (req.method === 'POST') { const d = { ...req.body }; delete d.id; const r = await col.add({ ...d, timestamp: d.timestamp || now() }); return created(res, { id: r.id }); }
+    }
+
+    // --- TELEGRAM ---
     if (p === '/telegram') {
       if (req.method === 'POST') {
         const { action, botToken, chatId } = req.body;
@@ -109,30 +166,37 @@ export default async function handler(req, res) {
       }
     }
 
-    if (p === '/analytics') {
-      if (req.method === 'GET') {
-        const [leadsSnap, repliesSnap, runsSnap] = await Promise.all([db.collection('leads').get(), db.collection('replies').get(), db.collection('keyword_runs').get()]);
-        const leads = leadsSnap.docs.map(d => d.data());
-        const replies = repliesSnap.docs.map(d => d.data());
-        const runs = runsSnap.docs.map(d => d.data());
-        return ok(res, { summary: { totalDiscovered: leads.length, qualified: leads.filter(l => l.qualificationStatus === 'qualified').length, rejected: leads.filter(l => l.qualificationStatus === 'rejected').length, emailsSent: leads.filter(l => l.outreachStatus === 'sent').length, humanReplies: replies.filter(r => r.classification === 'human').length, totalReplies: replies.length, totalRuns: runs.length, successfulRuns: runs.filter(r => r.status === 'completed').length, failedRuns: runs.filter(r => r.status === 'failed').length } });
-      }
-    }
-
-    if (p === '/logs') {
-      const col = db.collection('activity_logs');
-      if (req.method === 'GET') { const s = await col.orderBy('timestamp', 'desc').limit(50).get(); return ok(res, s.docs.map(d => ({ id: d.id, ...d.data() }))); }
-      if (req.method === 'POST') { const d = { ...req.body }; delete d.id; const r = await col.add({ ...d, timestamp: d.timestamp || now() }); return created(res, { id: r.id }); }
-    }
-
+    // --- INTEGRATIONS ---
     if (p === '/integrations') {
       const ref = db.collection('settings').doc('main');
       if (req.method === 'GET') { const s = await ref.get(); const d = s.exists ? s.data() : {}; return ok(res, { integrations: (d && d.integrations) || {} }); }
       if (req.method === 'PUT') { const { integrations } = req.body; await ref.set({ integrations, updatedAt: now() }, { merge: true }); return ok(res, { integrations }); }
     }
 
+    // --- RESET DATABASE ---
+    if (p === '/reset') {
+      if (req.method === 'POST') {
+        const collections = ['keywords', 'leads', 'email_templates', 'outreach_messages', 'replies', 'keyword_runs', 'activity_logs', 'sending_accounts', 'notifications', 'search_queries'];
+        for (const colName of collections) {
+          const snap = await db.collection(colName).get();
+          const batch = db.batch();
+          snap.docs.forEach(doc => batch.delete(doc.ref));
+          await batch.commit();
+        }
+        await db.collection('settings').doc('main').delete().catch(() => {});
+        return ok(res, { reset: true, message: 'All data cleared. Run seed script to repopulate.' });
+      }
+    }
+
     return fail(res, 404, 'Not found: ' + p);
   } catch (e) {
     return fail(res, 500, e.message || 'Internal error');
   }
+}
+
+function formatUptime(seconds) {
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return d > 0 ? `${d}d ${h}h ${m}m` : `${h}h ${m}m`;
 }

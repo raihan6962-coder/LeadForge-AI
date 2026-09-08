@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Sheet, Bot, Mail, Send, Shield, Eye, EyeOff, RefreshCw, Check,
   Power, AlertTriangle, Zap, Clock,
@@ -8,25 +8,54 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { Input, Toggle } from '@/components/ui/Input';
 import { useToast } from '@/contexts/ToastContext';
-
-const googleSheetsConfig = { webAppUrl: '', autoSync: false, status: 'disconnected', lastSync: '', lastSuccessfulFetch: '', rowsImported: 0, errors: 0 };
-const aiConfig = { provider: '', apiKey: '', personalizationEnabled: false, model: '', temperature: 0, maxTokens: 0 };
-const aiUsage = { requests: 0, successful: 0, failed: 0, avgLatencyMs: 0, estimatedCost: '$0' };
-const telegramConfig = { enabled: false, botToken: '', chatId: '', notifications: {} as Record<string, boolean> };
-const forwardingConfig = { enabled: false, email: '', lastForwarded: '', errors: 0 };
-const senderAccounts: any[] = [];
+import { useApi } from '@/hooks/useApi';
+import type { GoogleSheetsConfig, AIConfig, AIUsage, TelegramConfig, ForwardingConfig, SenderAccount } from '@/types';
 
 export function IntegrationsPage() {
   const { addToast } = useToast();
+  const { data: integrations } = useApi<{
+    googleSheets: GoogleSheetsConfig;
+    ai: AIConfig;
+    aiUsage: AIUsage;
+    telegram: TelegramConfig;
+    forwarding: ForwardingConfig;
+  }>('/api/integrations', {
+    googleSheets: { webAppUrl: '', autoSync: false, status: 'disconnected', lastSync: '', lastSuccessfulFetch: '', rowsImported: 0, errors: 0 },
+    ai: { provider: '', apiKey: '', personalizationEnabled: false, model: '', temperature: 0, maxTokens: 0 },
+    aiUsage: { requests: 0, successful: 0, failed: 0, avgLatencyMs: 0, estimatedCost: '$0' },
+    telegram: { enabled: false, botToken: '', chatId: '', notifications: {} as Record<string, boolean> },
+    forwarding: { enabled: false, email: '', lastForwarded: '', errors: 0 },
+  });
+
+  const { data: senderAccounts = [] } = useApi<SenderAccount[]>('/api/send_accounts', []);
+
+  const googleSheetsConfig = integrations?.googleSheets || { webAppUrl: '', autoSync: false, status: 'disconnected' as const, lastSync: '', lastSuccessfulFetch: '', rowsImported: 0, errors: 0 };
+  const aiConfig = integrations?.ai || { provider: '', apiKey: '', personalizationEnabled: false, model: '', temperature: 0, maxTokens: 0 };
+  const aiUsage = integrations?.aiUsage || { requests: 0, successful: 0, failed: 0, avgLatencyMs: 0, estimatedCost: '$0' };
+  const telegramConfig = integrations?.telegram || { enabled: false, botToken: '', chatId: '', notifications: {} as Record<string, boolean> };
+  const forwardingConfig = integrations?.forwarding || { enabled: false, email: '', lastForwarded: '', errors: 0 };
+
   const [showApiKey, setShowApiKey] = useState(false);
   const [showBotToken, setShowBotToken] = useState(false);
   const [sheetsUrl, setSheetsUrl] = useState(googleSheetsConfig.webAppUrl);
   const [sheetsAutoSync, setSheetsAutoSync] = useState(googleSheetsConfig.autoSync);
   const [aiPersonalization, setAiPersonalization] = useState(aiConfig.personalizationEnabled);
   const [telegramEnabled, setTelegramEnabled] = useState(telegramConfig.enabled);
-  const [telegramNotifs, setTelegramNotifs] = useState(telegramConfig.notifications);
+  const [telegramNotifs, setTelegramNotifs] = useState<Record<string, boolean>>(telegramConfig.notifications || {});
   const [forwardingEnabled, setForwardingEnabled] = useState(forwardingConfig.enabled);
   const [forwardingEmail, setForwardingEmail] = useState(forwardingConfig.email);
+
+  useEffect(() => {
+    if (integrations) {
+      setSheetsUrl(integrations.googleSheets.webAppUrl);
+      setSheetsAutoSync(integrations.googleSheets.autoSync);
+      setAiPersonalization(integrations.ai.personalizationEnabled);
+      setTelegramEnabled(integrations.telegram.enabled);
+      setTelegramNotifs(integrations.telegram.notifications || {});
+      setForwardingEnabled(integrations.forwarding.enabled);
+      setForwardingEmail(integrations.forwarding.email);
+    }
+  }, [integrations]);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -49,11 +78,11 @@ export function IntegrationsPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="card-base p-3">
               <p className="text-[10px] text-muted uppercase">Last Sync</p>
-              <p className="text-xs text-primary">{new Date(googleSheetsConfig.lastSync).toLocaleString()}</p>
+              <p className="text-xs text-primary">{googleSheetsConfig.lastSync ? new Date(googleSheetsConfig.lastSync).toLocaleString() : 'Never'}</p>
             </div>
             <div className="card-base p-3">
               <p className="text-[10px] text-muted uppercase">Last Successful Fetch</p>
-              <p className="text-xs text-primary">{new Date(googleSheetsConfig.lastSuccessfulFetch).toLocaleString()}</p>
+              <p className="text-xs text-primary">{googleSheetsConfig.lastSuccessfulFetch ? new Date(googleSheetsConfig.lastSuccessfulFetch).toLocaleString() : 'Never'}</p>
             </div>
             <div className="card-base p-3">
               <p className="text-[10px] text-muted uppercase">Rows Imported</p>
@@ -112,7 +141,7 @@ export function IntegrationsPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-secondary mb-1.5">Provider</label>
-              <div className="px-3.5 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-primary">{aiConfig.provider}</div>
+              <div className="px-3.5 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-primary">{aiConfig.provider || '—'}</div>
             </div>
             <div>
               <label className="block text-xs font-medium text-secondary mb-1.5">API Key</label>
@@ -188,12 +217,19 @@ export function IntegrationsPage() {
                 <div><p className="text-[10px] text-muted uppercase">Daily Capacity</p><p className="text-xs text-primary tabular-nums">{sender.dailyCapacity}</p></div>
                 <div><p className="text-[10px] text-muted uppercase">Sent Today</p><p className="text-xs text-primary tabular-nums">{sender.sentToday}</p></div>
                 <div><p className="text-[10px] text-muted uppercase">Remaining</p><p className="text-xs text-accent-300 tabular-nums">{sender.dailyCapacity - sender.sentToday}</p></div>
-                <div><p className="text-[10px] text-muted uppercase">Last Send</p><p className="text-xs text-primary">{new Date(sender.lastSuccessfulSend).toLocaleTimeString()}</p></div>
+                <div><p className="text-[10px] text-muted uppercase">Last Send</p><p className="text-xs text-primary">{sender.lastSuccessfulSend ? new Date(sender.lastSuccessfulSend).toLocaleTimeString() : '—'}</p></div>
               </div>
 
               {sender.lastError && <p className="text-[10px] text-error-400 mt-2">{sender.lastError}</p>}
             </div>
           ))}
+
+          {senderAccounts.length === 0 && (
+            <div className="p-6 text-center">
+              <Mail size={28} className="text-muted mx-auto mb-2" />
+              <p className="text-sm text-secondary">No sender accounts configured</p>
+            </div>
+          )}
 
           <div className="p-3 rounded-lg bg-white/5 border border-white/10">
             <p className="text-[10px] text-muted leading-relaxed">

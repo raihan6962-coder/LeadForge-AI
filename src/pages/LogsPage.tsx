@@ -6,13 +6,14 @@ import { Button } from '@/components/ui/Button';
 import { Input, Select } from '@/components/ui/Input';
 import { Pagination } from '@/components/ui/DataTable';
 import { useToast } from '@/contexts/ToastContext';
-
-const activityLogs: any[] = [];
+import { useApi } from '@/hooks/useApi';
+import type { ActivityLog } from '@/types';
 
 const PAGE_SIZE = 12;
 
 export function LogsPage() {
   const { addToast } = useToast();
+  const { data: activityLogs = [] } = useApi<ActivityLog[]>('/api/logs', []);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [page, setPage] = useState(1);

@@ -10,14 +10,14 @@ import { Input, Select } from '@/components/ui/Input';
 import { Drawer } from '@/components/ui/Modal';
 import { DataTable, Pagination } from '@/components/ui/DataTable';
 import { useToast } from '@/contexts/ToastContext';
+import { useApi } from '@/hooks/useApi';
 import type { Lead } from '@/types';
-
-const allLeads: Lead[] = [];
 
 const PAGE_SIZE = 10;
 
 export function LeadsPage() {
   const { addToast } = useToast();
+  const { data: allLeads = [] } = useApi<Lead[]>('/api/leads', []);
   const [search, setSearch] = useState('');
   const [qualFilter, setQualFilter] = useState('all');
   const [outreachFilter, setOutreachFilter] = useState('all');
@@ -35,7 +35,7 @@ export function LeadsPage() {
       if (replyFilter !== 'all' && l.replyStatus !== replyFilter) return false;
       return true;
     });
-  }, [search, qualFilter, outreachFilter, replyFilter]);
+  }, [search, qualFilter, outreachFilter, replyFilter, allLeads]);
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);

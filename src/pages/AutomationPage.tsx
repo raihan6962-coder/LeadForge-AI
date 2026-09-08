@@ -8,10 +8,21 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/Modal';
 import { useToast } from '@/contexts/ToastContext';
+import { useApi, useApiMutation } from '@/hooks/useApi';
+import type { KeywordRun, CurrentJob } from '@/types';
 
-const automationRuns: any[] = [];
-const currentJob = { elapsedSeconds: 0, progress: { current: 0, target: 0 }, phase: 'discovery', expectedCompletion: '', queuePosition: '' };
-const telegramConfig = { enabled: false };
+const defaultJob: CurrentJob = {
+  keyword: '',
+  phase: 'discovery',
+  status: 'running',
+  progress: { current: 0, target: 0 },
+  qualified: 0,
+  duplicates: 0,
+  rejected: 0,
+  elapsedSeconds: 0,
+  expectedCompletion: '',
+  startedAt: '',
+};
 
 function formatElapsed(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -22,12 +33,18 @@ function formatElapsed(seconds: number): string {
 
 export function AutomationPage() {
   const { addToast } = useToast();
+  const { data: automationRuns = [], loading: runsLoading } = useApi<KeywordRun[]>('/api/keyword_runs', []);
+  const { data: currentJobData } = useApi<CurrentJob>('/api/automation', defaultJob);
+  const { data: telegramConfig } = useApi<{ enabled: boolean }>('/api/settings', { enabled: false }, ['telegram']);
+  const { mutate: triggerTestRun, loading: testRunning } = useApiMutation<{ action: string; keyword: string }, unknown>();
+
+  const currentJob = currentJobData || defaultJob;
+
   const [isRunning, setIsRunning] = useState(true);
   const [elapsed, setElapsed] = useState(currentJob.elapsedSeconds);
   const [progress, setProgress] = useState(currentJob.progress.current);
   const [showStopConfirm, setShowStopConfirm] = useState(false);
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
-  const [exceededExpected, setExceededExpected] = useState(false);
 
   useEffect(() => {
     if (!isRunning) return;
@@ -36,7 +53,7 @@ export function AutomationPage() {
       setProgress(prev => Math.min(prev + Math.random() * 2, currentJob.progress.target));
     }, 1000);
     return () => clearInterval(interval);
-  }, [isRunning]);
+  }, [isRunning, currentJob.progress.target]);
 
   const currentRun = automationRuns[0] || { keyword: '', startedAt: '', expectedEnd: '', actualEnd: null, leadsDiscovered: 0, qualified: 0, duplicates: 0, emailsSent: 0, replies: 0, status: 'running' as const, id: '', exceededExpected: false };
   const now = new Date();
@@ -63,6 +80,15 @@ export function AutomationPage() {
     setElapsed(0);
     setProgress(0);
     addToast('info', 'Job restarted', 'The failed job has been restarted from the beginning.');
+  };
+
+  const handleTestRun = async () => {
+    const result = await triggerTestRun('/api/automation', { action: 'start', keyword: 'test-keyword' });
+    if (result !== null) {
+      addToast('success', 'Test run started', 'A test automation run has been initiated with keyword "test-keyword".');
+    } else {
+      addToast('error', 'Test run failed', 'Could not start test automation run.');
+    }
   };
 
   return (
@@ -110,6 +136,15 @@ export function AutomationPage() {
               >
                 Stop
               </Button>
+              <Button
+                variant="accent"
+                size="md"
+                icon={<Zap size={15} />}
+                onClick={handleTestRun}
+                loading={testRunning}
+              >
+                Test Run
+              </Button>
             </div>
           </div>
         </div>
@@ -119,15 +154,15 @@ export function AutomationPage() {
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-5">
             <div>
               <p className="text-[10px] text-muted uppercase tracking-wider mb-1">Current Keyword</p>
-              <p className="text-sm text-primary font-medium">{currentRun.keyword}</p>
+              <p className="text-sm text-primary font-medium">{currentRun.keyword || '—'}</p>
             </div>
             <div>
               <p className="text-[10px] text-muted uppercase tracking-wider mb-1">Started At</p>
-              <p className="text-sm text-primary">{new Date(currentRun.startedAt).toLocaleTimeString()}</p>
+              <p className="text-sm text-primary">{currentRun.startedAt ? new Date(currentRun.startedAt).toLocaleTimeString() : '—'}</p>
             </div>
             <div>
               <p className="text-[10px] text-muted uppercase tracking-wider mb-1">Expected End</p>
-              <p className="text-sm text-primary">{new Date(currentRun.expectedEnd).toLocaleTimeString()}</p>
+              <p className="text-sm text-primary">{currentRun.expectedEnd ? new Date(currentRun.expectedEnd).toLocaleTimeString() : '—'}</p>
             </div>
             <div>
               <p className="text-[10px] text-muted uppercase tracking-wider mb-1">Actual End</p>
@@ -135,7 +170,7 @@ export function AutomationPage() {
             </div>
             <div>
               <p className="text-[10px] text-muted uppercase tracking-wider mb-1">Queue Position</p>
-              <p className="text-sm text-primary">{currentJob.queuePosition || '—'}</p>
+              <p className="text-sm text-primary">—</p>
             </div>
             <div>
               <p className="text-[10px] text-muted uppercase tracking-wider mb-1">Current Phase</p>
@@ -153,7 +188,7 @@ export function AutomationPage() {
             <ProgressBar value={Math.floor(progress)} max={currentJob.progress.target} color="accent" size="lg" showValue={false} />
             <div className="flex items-center justify-between mt-2">
               <span className="text-xs text-muted">Elapsed: <span className="text-primary font-mono tabular-nums">{formatElapsed(Math.floor(elapsed))}</span></span>
-              <span className="text-xs text-muted">Expected completion: <span className="text-primary">{currentJob.expectedCompletion}</span></span>
+              <span className="text-xs text-muted">Expected completion: <span className="text-primary">{currentJob.expectedCompletion || '—'}</span></span>
             </div>
           </div>
 
@@ -249,6 +284,12 @@ export function AutomationPage() {
               ))}
             </tbody>
           </table>
+          {automationRuns.length === 0 && (
+            <div className="py-12 text-center">
+              <Clock size={28} className="text-muted mx-auto mb-2" />
+              <p className="text-sm text-secondary">No automation runs yet</p>
+            </div>
+          )}
         </div>
       </Card>
 

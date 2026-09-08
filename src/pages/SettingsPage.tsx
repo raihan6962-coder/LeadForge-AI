@@ -7,7 +7,7 @@ import { Card, CardHeader } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input, Select, Toggle, Textarea } from '@/components/ui/Input';
 import { useToast } from '@/contexts/ToastContext';
-import { useApi } from '@/hooks/useApi';
+import { useApi, useApiMutation } from '@/hooks/useApi';
 
 const defaultSettings = {
   general: { systemName: '', adminEmail: '', timezone: '', dateFormat: 'iso' },
@@ -45,8 +45,10 @@ const sections: { id: Section; label: string; icon: typeof SettingsIcon }[] = [
 export function SettingsPage() {
   const { addToast } = useToast();
   const [active, setActive] = useState<Section>('general');
-  const { data: settings } = useApi<typeof defaultSettings>('/api/settings', defaultSettings);
+  const { data: settings, refetch } = useApi<typeof defaultSettings>('/api/settings', defaultSettings);
   const { data: systemInfo } = useApi<typeof defaultSystem>('/api/system', defaultSystem);
+  const { mutate: saveSettings, loading: saving } = useApiMutation<typeof defaultSettings, unknown>();
+  const { mutate: resetDatabase, loading: resetting } = useApiMutation<void, unknown>();
 
   const [systemName, setSystemName] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
@@ -84,6 +86,7 @@ export function SettingsPage() {
   const [retentionDays, setRetentionDays] = useState(0);
   const [maxLeads, setMaxLeads] = useState(0);
   const [autoArchive, setAutoArchive] = useState(true);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   useEffect(() => {
     if (!settings) return;
@@ -125,8 +128,43 @@ export function SettingsPage() {
     setAutoArchive(settings.data.autoArchive);
   }, [settings]);
 
-  const handleSave = () => addToast('success', 'Settings saved', 'Your changes have been saved successfully.');
-  const handleReset = () => addToast('info', 'Settings reset', 'All changes have been reverted to defaults.');
+  const handleSave = async () => {
+    const payload = {
+      general: { systemName, adminEmail, timezone, dateFormat },
+      automation: { monthlyKeywordCount, dailyStartTime, expectedEndTime, targetQualifiedLeads, maxDiscoveryAttempts, searchExpansionDepth, continueOnExceeded },
+      qualification: criteria,
+      ai: { provider: aiProvider, model: aiModel, temperature: aiTemperature, maxTokens: aiMaxTokens, enablePersonalization: aiPersonalization },
+      sheets: { webAppUrl: sheetsUrl, automaticSync: sheetsAutoSync, syncInterval: sheetsSyncInterval },
+      email: { minInterval: intervalMin, maxInterval: intervalMax, maxDailySends },
+      telegram: { botToken: telegramBotToken, chatId: telegramChatId, enabled: telegramEnabled, notifications: telegramNotifications },
+      forwarding: { email: forwardingEmail, enabled: forwardingEnabled },
+      notifications: notificationToggles,
+      security: { sessionTimeout, requireReauth, logChanges },
+      data: { retentionDays, maxLeads, autoArchive },
+    };
+    const result = await saveSettings('/api/settings', payload, 'PUT');
+    if (result !== null) {
+      refetch();
+      addToast('success', 'Settings saved', 'Your changes have been saved successfully.');
+    } else {
+      addToast('error', 'Save failed', 'Could not save settings to the database.');
+    }
+  };
+
+  const handleReset = () => {
+    addToast('info', 'Settings reset', 'All changes have been reverted to defaults.');
+  };
+
+  const handleResetDatabase = async () => {
+    const result = await resetDatabase('/api/reset', undefined, 'POST');
+    if (result !== null) {
+      setShowResetConfirm(false);
+      refetch();
+      addToast('success', 'Database reset', 'All data has been cleared and reset to defaults.');
+    } else {
+      addToast('error', 'Reset failed', 'Could not reset the database.');
+    }
+  };
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -372,6 +410,7 @@ export function SettingsPage() {
                   <div className="card-base p-3"><p className="text-[10px] text-muted uppercase">CPU Usage</p><p className="text-sm text-primary">{systemInfo.cpuUsage || '—'}</p></div>
                 </div>
                 <Button variant="outline" size="sm" onClick={() => addToast('info', 'System check', 'Running system diagnostics...')}>Run Diagnostics</Button>
+                <Button variant="danger" size="sm" onClick={() => setShowResetConfirm(true)} loading={resetting}>Reset Database</Button>
               </div>
             </Card>
           )}
@@ -379,10 +418,34 @@ export function SettingsPage() {
           {/* Save / Reset */}
           <div className="flex items-center justify-end gap-2 pt-2">
             <Button variant="ghost" size="md" icon={<RotateCcw size={15} />} onClick={handleReset}>Reset to Defaults</Button>
-            <Button size="md" icon={<Save size={15} />} onClick={handleSave}>Save Changes</Button>
+            <Button size="md" icon={<Save size={15} />} onClick={handleSave} loading={saving}>Save Changes</Button>
           </div>
         </div>
       </div>
+
+      {/* Reset Database Confirmation Dialog */}
+      {showResetConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="card-base p-6 max-w-md w-full mx-4 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-error-500/10 flex items-center justify-center">
+                <Database size={18} className="text-error-400" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-primary">Reset Database</h3>
+                <p className="text-[10px] text-muted">This action cannot be undone</p>
+              </div>
+            </div>
+            <p className="text-xs text-secondary">
+              This will permanently delete ALL data including leads, keywords, templates, replies, automation runs, and logs. The system will be reset to its initial state.
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setShowResetConfirm(false)}>Cancel</Button>
+              <Button variant="danger" size="sm" onClick={handleResetDatabase} loading={resetting}>Reset Database</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

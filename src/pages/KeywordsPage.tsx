@@ -9,13 +9,16 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal, ConfirmDialog } from '@/components/ui/Modal';
 import { useToast } from '@/contexts/ToastContext';
+import { useApi, useApiMutation } from '@/hooks/useApi';
 import type { Keyword } from '@/types';
-
-const initialKeywords: Keyword[] = [];
 
 export function KeywordsPage() {
   const { addToast } = useToast();
-  const [keywords, setKeywords] = useState<Keyword[]>(initialKeywords);
+  const { data: keywords = [], refetch } = useApi<Keyword[]>('/api/keywords', []);
+  const { mutate: createKeyword, loading: creating } = useApiMutation<Partial<Keyword>, Keyword>();
+  const { mutate: deleteKeywordMutate, loading: deleting } = useApiMutation<void, unknown>();
+  const { mutate: updateKeywordMutate, loading: updating } = useApiMutation<Partial<Keyword>, unknown>();
+
   const [search, setSearch] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -25,41 +28,44 @@ export function KeywordsPage() {
 
   const filtered = keywords.filter(k => k.keyword.toLowerCase().includes(search.toLowerCase()));
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!newKeyword.keyword || !newKeyword.day) {
       addToast('error', 'Missing fields', 'Please enter a keyword and assign a day.');
       return;
     }
-    const kw: Keyword = {
-      id: `kw-${Date.now()}`,
+    const result = await createKeyword('/api/keywords', {
       keyword: newKeyword.keyword,
       day: parseInt(newKeyword.day),
-      date: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(newKeyword.day).padStart(2, '0')}`,
-      status: 'scheduled',
-      targetLeads: 1000,
-      qualifiedLeads: 0,
-      emailsSent: 0,
-      replies: 0,
-      completion: 0,
       templateId: newKeyword.templateId || null,
-      enabled: true,
-      relatedQueries: [],
-    };
-    setKeywords(prev => [...prev, kw]);
-    setNewKeyword({ keyword: '', day: '', templateId: '' });
-    setShowAdd(false);
-    addToast('success', 'Keyword added', `"${kw.keyword}" has been scheduled for Day ${kw.day}.`);
+    });
+    if (result) {
+      setNewKeyword({ keyword: '', day: '', templateId: '' });
+      setShowAdd(false);
+      refetch();
+      addToast('success', 'Keyword added', `"${newKeyword.keyword}" has been scheduled for Day ${newKeyword.day}.`);
+    } else {
+      addToast('error', 'Failed to add keyword', 'Could not save keyword to the database.');
+    }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deleteId) return;
-    setKeywords(prev => prev.filter(k => k.id !== deleteId));
-    setDeleteId(null);
-    addToast('info', 'Keyword deleted', 'The keyword has been removed from the schedule.');
+    const result = await deleteKeywordMutate(`/api/keywords?id=${deleteId}`, undefined, 'DELETE');
+    if (result !== null) {
+      setDeleteId(null);
+      refetch();
+      addToast('info', 'Keyword deleted', 'The keyword has been removed from the schedule.');
+    } else {
+      addToast('error', 'Failed to delete keyword', 'Could not remove keyword from the database.');
+    }
   };
 
-  const handleToggle = (id: string) => {
-    setKeywords(prev => prev.map(k => k.id === id ? { ...k, enabled: !k.enabled, status: !k.enabled ? 'scheduled' : 'disabled' } : k));
+  const handleToggle = async (id: string) => {
+    const kw = keywords.find(k => k.id === id);
+    if (!kw) return;
+    const newEnabled = !kw.enabled;
+    await updateKeywordMutate(`/api/keywords`, { id, enabled: newEnabled, status: newEnabled ? 'scheduled' : 'disabled' }, 'PUT');
+    refetch();
   };
 
   const handleExport = () => {
@@ -177,7 +183,7 @@ export function KeywordsPage() {
         footer={
           <>
             <Button variant="ghost" onClick={() => setShowAdd(false)}>Cancel</Button>
-            <Button onClick={handleAdd}>Add Keyword</Button>
+            <Button onClick={handleAdd} loading={creating}>Add Keyword</Button>
           </>
         }
       >

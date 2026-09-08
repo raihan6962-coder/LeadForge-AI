@@ -37,9 +37,14 @@ export function useApiMutation<TInput, TOutput>() {
     setLoading(true);
     setError(null);
     try {
-      const result = method === 'POST'
-        ? await api.post<TOutput>(path, data)
-        : await api.put<TOutput>(path, data);
+      let result: TOutput;
+      if (method === 'DELETE') {
+        result = await api.delete<TOutput>(path);
+      } else if (method === 'PUT') {
+        result = await api.put<TOutput>(path, data);
+      } else {
+        result = await api.post<TOutput>(path, data);
+      }
       setLoading(false);
       return result;
     } catch (err) {

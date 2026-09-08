@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Plus, Search, Eye, Edit2, Copy, Power, Mail,
   FileText, Upload,
@@ -9,9 +9,8 @@ import { Button } from '@/components/ui/Button';
 import { Input, Textarea } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/contexts/ToastContext';
+import { useApi, useApiMutation } from '@/hooks/useApi';
 import type { EmailTemplate } from '@/types';
-
-const initialTemplates: EmailTemplate[] = [];
 
 const allVariables = [
   '{{app_name}}', '{{developer_name}}', '{{rating}}', '{{install_count}}',
@@ -20,7 +19,11 @@ const allVariables = [
 
 export function TemplatesPage() {
   const { addToast } = useToast();
-  const [templates, setTemplates] = useState<EmailTemplate[]>(initialTemplates);
+  const { data: templates = [], refetch } = useApi<EmailTemplate[]>('/api/templates', []);
+  const { mutate: saveTemplate, loading: saving } = useApiMutation<Partial<EmailTemplate>, EmailTemplate>();
+  const { mutate: duplicateTemplate, loading: duplicating } = useApiMutation<Partial<EmailTemplate>, EmailTemplate>();
+  const { mutate: toggleTemplate, loading: toggling } = useApiMutation<Partial<EmailTemplate>, unknown>();
+
   const [search, setSearch] = useState('');
   const [previewTemplate, setPreviewTemplate] = useState<EmailTemplate | null>(null);
   const [editTemplate, setEditTemplate] = useState<EmailTemplate | null>(null);
@@ -45,15 +48,33 @@ export function TemplatesPage() {
     return rendered;
   };
 
-  const handleDuplicate = (tpl: EmailTemplate) => {
-    const copy: EmailTemplate = { ...tpl, id: `tpl-${Date.now()}`, name: `${tpl.name} (Copy)`, status: 'draft' };
-    setTemplates(prev => [...prev, copy]);
-    addToast('success', 'Template duplicated', `"${tpl.name}" has been duplicated.`);
+  const handleDuplicate = async (tpl: EmailTemplate) => {
+    const result = await duplicateTemplate('/api/templates', { ...tpl, id: undefined, name: `${tpl.name} (Copy)`, status: 'draft' });
+    if (result) {
+      refetch();
+      addToast('success', 'Template duplicated', `"${tpl.name}" has been duplicated.`);
+    } else {
+      addToast('error', 'Duplicate failed', 'Could not duplicate template.');
+    }
   };
 
-  const handleToggle = (tpl: EmailTemplate) => {
-    setTemplates(prev => prev.map(t => t.id === tpl.id ? { ...t, status: t.status === 'active' ? 'disabled' : 'active' } : t));
-    addToast('info', 'Template updated', `"${tpl.name}" is now ${tpl.status === 'active' ? 'disabled' : 'active'}.`);
+  const handleToggle = async (tpl: EmailTemplate) => {
+    const newStatus = tpl.status === 'active' ? 'disabled' : 'active';
+    await toggleTemplate('/api/templates', { id: tpl.id, status: newStatus }, 'PUT');
+    refetch();
+    addToast('info', 'Template updated', `"${tpl.name}" is now ${newStatus}.`);
+  };
+
+  const handleSave = async () => {
+    if (!editTemplate) return;
+    const result = await saveTemplate('/api/templates', editTemplate);
+    if (result) {
+      setEditTemplate(null);
+      refetch();
+      addToast('success', 'Template saved', 'Template has been saved successfully.');
+    } else {
+      addToast('error', 'Save failed', 'Could not save template.');
+    }
   };
 
   return (
@@ -130,6 +151,13 @@ export function TemplatesPage() {
         ))}
       </div>
 
+      {filtered.length === 0 && (
+        <Card className="p-12 text-center">
+          <Mail size={32} className="text-muted mx-auto mb-3" />
+          <p className="text-sm text-secondary">No templates found</p>
+        </Card>
+      )}
+
       {/* Preview Modal */}
       <Modal
         open={!!previewTemplate}
@@ -168,16 +196,16 @@ export function TemplatesPage() {
         footer={
           <>
             <Button variant="ghost" onClick={() => setEditTemplate(null)}>Cancel</Button>
-            <Button onClick={() => { setEditTemplate(null); addToast('success', 'Template saved', 'Template has been saved successfully.'); }}>Save Template</Button>
+            <Button onClick={handleSave} loading={saving}>Save Template</Button>
           </>
         }
       >
         {editTemplate && (
           <div className="space-y-4">
-            <Input label="Template Name" defaultValue={editTemplate.name} placeholder="e.g. Fitness Intro" />
-            <Input label="Keyword" defaultValue={editTemplate.keyword} placeholder="e.g. fitness tracker app" />
-            <Input label="Subject" defaultValue={editTemplate.subject} placeholder="Partnership opportunity for {{app_name}}" />
-            <Textarea label="Body" defaultValue={editTemplate.body} placeholder="Hi {{developer_name}}, ..." className="min-h-[200px]" />
+            <Input label="Template Name" value={editTemplate.name} onChange={e => setEditTemplate(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="e.g. Fitness Intro" />
+            <Input label="Keyword" value={editTemplate.keyword} onChange={e => setEditTemplate(prev => prev ? { ...prev, keyword: e.target.value } : null)} placeholder="e.g. fitness tracker app" />
+            <Input label="Subject" value={editTemplate.subject} onChange={e => setEditTemplate(prev => prev ? { ...prev, subject: e.target.value } : null)} placeholder="Partnership opportunity for {{app_name}}" />
+            <Textarea label="Body" value={editTemplate.body} onChange={e => setEditTemplate(prev => prev ? { ...prev, body: e.target.value } : null)} placeholder="Hi {{developer_name}}, ..." className="min-h-[200px]" />
             <div>
               <p className="text-xs text-secondary mb-2">Insert Variable</p>
               <div className="flex flex-wrap gap-1.5">
