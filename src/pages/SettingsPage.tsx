@@ -7,7 +7,9 @@ import { Card, CardHeader } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input, Select, Toggle, Textarea } from '@/components/ui/Input';
 import { useToast } from '@/contexts/ToastContext';
-import { useApi, useApiMutation } from '@/hooks/useApi';
+import { useApi } from '@/hooks/useApi';
+import { db } from '@/lib/firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 const defaultSettings = {
   general: { systemName: '', adminEmail: '', timezone: '', dateFormat: 'iso' },
@@ -47,8 +49,8 @@ export function SettingsPage() {
   const [active, setActive] = useState<Section>('general');
   const { data: settings, refetch } = useApi<typeof defaultSettings>('/api/settings', defaultSettings);
   const { data: systemInfo } = useApi<typeof defaultSystem>('/api/system', defaultSystem);
-  const { mutate: saveSettings, loading: saving } = useApiMutation<typeof defaultSettings, unknown>();
-  const { mutate: resetDatabase, loading: resetting } = useApiMutation<void, unknown>();
+  const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   const [systemName, setSystemName] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
@@ -90,64 +92,82 @@ export function SettingsPage() {
 
   useEffect(() => {
     if (!settings) return;
-    setSystemName(settings.general.systemName);
-    setAdminEmail(settings.general.adminEmail);
-    setTimezone(settings.general.timezone);
-    setDateFormat(settings.general.dateFormat);
-    setMonthlyKeywordCount(settings.automation.monthlyKeywordCount);
-    setDailyStartTime(settings.automation.dailyStartTime);
-    setExpectedEndTime(settings.automation.expectedEndTime);
-    setTargetQualifiedLeads(settings.automation.targetQualifiedLeads);
-    setMaxDiscoveryAttempts(settings.automation.maxDiscoveryAttempts);
-    setSearchExpansionDepth(settings.automation.searchExpansionDepth);
-    setContinueOnExceeded(settings.automation.continueOnExceeded);
-    setCriteria(settings.qualification);
-    setAiProvider(settings.ai.provider);
-    setAiModel(settings.ai.model);
-    setAiTemperature(settings.ai.temperature);
-    setAiMaxTokens(settings.ai.maxTokens);
-    setAiPersonalization(settings.ai.enablePersonalization);
-    setSheetsUrl(settings.sheets.webAppUrl);
-    setSheetsAutoSync(settings.sheets.automaticSync);
-    setSheetsSyncInterval(settings.sheets.syncInterval);
-    setIntervalMin(settings.email.minInterval);
-    setIntervalMax(settings.email.maxInterval);
-    setMaxDailySends(settings.email.maxDailySends);
-    setTelegramBotToken(settings.telegram.botToken);
-    setTelegramChatId(settings.telegram.chatId);
-    setTelegramEnabled(settings.telegram.enabled);
-    setTelegramNotifications(settings.telegram.notifications);
-    setForwardingEmail(settings.forwarding.email);
-    setForwardingEnabled(settings.forwarding.enabled);
-    setNotificationToggles(settings.notifications);
-    setSessionTimeout(settings.security.sessionTimeout);
-    setRequireReauth(settings.security.requireReauth);
-    setLogChanges(settings.security.logChanges);
-    setRetentionDays(settings.data.retentionDays);
-    setMaxLeads(settings.data.maxLeads);
-    setAutoArchive(settings.data.autoArchive);
+    const g = (settings as any).general || {};
+    const auto = (settings as any).automation || {};
+    const qual = (settings as any).qualification || {};
+    const ai = (settings as any).ai || {};
+    const integrations = (settings as any).integrations || {};
+    const sheets = integrations.googleSheets || (settings as any).sheets || {};
+    const email = (settings as any).email || {};
+    const telegram = (settings as any).telegram || {};
+    const fwd = (settings as any).forwarding || {};
+    const notif = (settings as any).notifications || {};
+    const sec = (settings as any).security || {};
+    const data = (settings as any).data || {};
+
+    setSystemName(g.systemName || (settings as any).systemName || '');
+    setAdminEmail(g.adminEmail || (settings as any).adminEmail || '');
+    setTimezone(g.timezone || (settings as any).timezone || '');
+    setDateFormat(g.dateFormat || (settings as any).dateFormat || 'iso');
+    setMonthlyKeywordCount(auto.monthlyKeywordCount || 0);
+    setDailyStartTime(auto.dailyStartTime || '');
+    setExpectedEndTime(auto.expectedEndTime || '');
+    setTargetQualifiedLeads(auto.targetQualifiedLeads || auto.targetLeadsPerKeyword || 0);
+    setMaxDiscoveryAttempts(auto.maxDiscoveryAttempts || 0);
+    setSearchExpansionDepth(auto.searchExpansionDepth || 0);
+    setContinueOnExceeded(auto.continueOnExceeded || auto.continueOnOverdue || true);
+    setCriteria({ ...defaultSettings.qualification, ...qual });
+    setAiProvider(ai.provider || '');
+    setAiModel(ai.model || '');
+    setAiTemperature(ai.temperature || 0);
+    setAiMaxTokens(ai.maxTokens || 0);
+    setAiPersonalization(ai.enablePersonalization || ai.personalizationEnabled || true);
+    setSheetsUrl(sheets.webAppUrl || '');
+    setSheetsAutoSync(sheets.automaticSync || sheets.autoSync || false);
+    setSheetsSyncInterval(sheets.syncInterval || 0);
+    setIntervalMin(email.minInterval || email.sendingIntervalMin || 0);
+    setIntervalMax(email.maxInterval || email.sendingIntervalMax || 0);
+    setMaxDailySends(email.maxDailySends || email.maxDailySendsPerAccount || 0);
+    setTelegramBotToken(telegram.botToken || '');
+    setTelegramChatId(telegram.chatId || '');
+    setTelegramEnabled(telegram.enabled || false);
+    setTelegramNotifications(telegram.notifications || {});
+    setForwardingEmail(fwd.email || '');
+    setForwardingEnabled(fwd.enabled || false);
+    setNotificationToggles(notif);
+    setSessionTimeout(sec.sessionTimeout || 0);
+    setRequireReauth(sec.requireReauth ?? sec.reAuthForSensitive ?? true);
+    setLogChanges(sec.logChanges ?? sec.logConfigChanges ?? true);
+    setRetentionDays(data.retentionDays || 0);
+    setMaxLeads(data.maxLeads || 0);
+    setAutoArchive(data.autoArchive ?? true);
   }, [settings]);
 
   const handleSave = async () => {
-    const payload = {
-      general: { systemName, adminEmail, timezone, dateFormat },
-      automation: { monthlyKeywordCount, dailyStartTime, expectedEndTime, targetQualifiedLeads, maxDiscoveryAttempts, searchExpansionDepth, continueOnExceeded },
-      qualification: criteria,
-      ai: { provider: aiProvider, model: aiModel, temperature: aiTemperature, maxTokens: aiMaxTokens, enablePersonalization: aiPersonalization },
-      sheets: { webAppUrl: sheetsUrl, automaticSync: sheetsAutoSync, syncInterval: sheetsSyncInterval },
-      email: { minInterval: intervalMin, maxInterval: intervalMax, maxDailySends },
-      telegram: { botToken: telegramBotToken, chatId: telegramChatId, enabled: telegramEnabled, notifications: telegramNotifications },
-      forwarding: { email: forwardingEmail, enabled: forwardingEnabled },
-      notifications: notificationToggles,
-      security: { sessionTimeout, requireReauth, logChanges },
-      data: { retentionDays, maxLeads, autoArchive },
-    };
-    const result = await saveSettings('/api/settings', payload, 'PUT');
-    if (result !== null) {
+    setSaving(true);
+    try {
+      const payload: any = {
+        systemName, adminEmail, timezone, dateFormat,
+        automation: { monthlyKeywordCount, dailyStartTime, expectedEndTime, targetQualifiedLeads, maxDiscoveryAttempts, searchExpansionDepth, continueOnExceeded, continueOnOverdue: continueOnExceeded, targetLeadsPerKeyword: targetQualifiedLeads },
+        qualification: criteria,
+        ai: { provider: aiProvider, model: aiModel, temperature: aiTemperature, maxTokens: aiMaxTokens, enablePersonalization: aiPersonalization, personalizationEnabled: aiPersonalization },
+        email: { sendingIntervalMin: intervalMin, sendingIntervalMax: intervalMax, maxDailySendsPerAccount: maxDailySends, minInterval: intervalMin, maxInterval: intervalMax, maxDailySends },
+        telegram: { botToken: telegramBotToken, chatId: telegramChatId, enabled: telegramEnabled, notifications: telegramNotifications },
+        forwarding: { email: forwardingEmail, enabled: forwardingEnabled },
+        notifications: notificationToggles,
+        security: { sessionTimeout, requireReauth, reAuthForSensitive: requireReauth, logChanges, logConfigChanges: logChanges },
+        data: { retentionDays, maxLeads, autoArchive },
+        general: { systemName, adminEmail, timezone, dateFormat },
+        sheets: { webAppUrl: sheetsUrl, automaticSync: sheetsAutoSync, syncInterval: sheetsSyncInterval },
+        updatedAt: new Date().toISOString(),
+      };
+      await setDoc(doc(db, 'settings', 'main'), payload, { merge: true });
       refetch();
       addToast('success', 'Settings saved', 'Your changes have been saved successfully.');
-    } else {
+    } catch {
       addToast('error', 'Save failed', 'Could not save settings to the database.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -156,13 +176,21 @@ export function SettingsPage() {
   };
 
   const handleResetDatabase = async () => {
-    const result = await resetDatabase('/api/reset', undefined, 'POST');
-    if (result !== null) {
-      setShowResetConfirm(false);
-      refetch();
-      addToast('success', 'Database reset', 'All data has been cleared and reset to defaults.');
-    } else {
+    setResetting(true);
+    try {
+      const res = await fetch('/api/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      const body = await res.json();
+      if (body.success) {
+        setShowResetConfirm(false);
+        refetch();
+        addToast('success', 'Database reset', 'All data has been cleared.');
+      } else {
+        addToast('error', 'Reset failed', body.error || 'Could not reset the database.');
+      }
+    } catch {
       addToast('error', 'Reset failed', 'Could not reset the database.');
+    } finally {
+      setResetting(false);
     }
   };
 

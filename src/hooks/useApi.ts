@@ -8,7 +8,7 @@ interface UseApiState<T> {
 }
 
 export function useApi<T>(path: string, fallback: T, deps: unknown[] = []) {
-  const [state, setState] = useState<UseApiState<T>>({ data: null, loading: true, error: null });
+  const [state, setState] = useState<UseApiState<T>>({ data: fallback, loading: true, error: null });
 
   const fetchData = useCallback(async () => {
     setState(prev => ({ ...prev, loading: true, error: null }));
