@@ -10,7 +10,7 @@ import { ConfirmDialog } from '@/components/ui/Modal';
 import { useToast } from '@/contexts/ToastContext';
 
 const automationRuns: any[] = [];
-const currentJob = { elapsedSeconds: 0, progress: { current: 0, target: 1000 }, phase: 'discovery', expectedCompletion: '' };
+const currentJob = { elapsedSeconds: 0, progress: { current: 0, target: 0 }, phase: 'discovery', expectedCompletion: '', queuePosition: '' };
 const telegramConfig = { enabled: false };
 
 function formatElapsed(seconds: number): string {
@@ -135,7 +135,7 @@ export function AutomationPage() {
             </div>
             <div>
               <p className="text-[10px] text-muted uppercase tracking-wider mb-1">Queue Position</p>
-              <p className="text-sm text-primary">1 of 3 pending</p>
+              <p className="text-sm text-primary">{currentJob.queuePosition || '—'}</p>
             </div>
             <div>
               <p className="text-[10px] text-muted uppercase tracking-wider mb-1">Current Phase</p>

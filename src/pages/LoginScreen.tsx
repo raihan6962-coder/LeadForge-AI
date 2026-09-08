@@ -99,7 +99,7 @@ export function LoginScreen() {
         </div>
 
         <p className="text-center text-[10px] text-muted mt-4">
-          LeadForge AI v2.4.0 — Automation Control Platform
+          LeadForge AI — Automation Control Platform
         </p>
       </div>
     </div>

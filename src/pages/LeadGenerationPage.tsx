@@ -4,7 +4,7 @@ import { Card, CardHeader, ProgressBar, KPICard } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 
 const searchExpansion = { primaryQuery: '', relatedQueries: [] as { query: string; leadsDiscovered: number; qualified: number; rejected: number; duplicates: number; status: string }[] };
-const currentJob = { progress: { current: 0, target: 1000 } };
+const currentJob = { progress: { current: 0, target: 0 } };
 
 export function LeadGenerationPage() {
   const [selectedQuery, setSelectedQuery] = useState<number | null>(null);

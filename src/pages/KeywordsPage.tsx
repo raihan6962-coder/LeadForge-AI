@@ -34,7 +34,7 @@ export function KeywordsPage() {
       id: `kw-${Date.now()}`,
       keyword: newKeyword.keyword,
       day: parseInt(newKeyword.day),
-      date: `2026-08-${String(newKeyword.day).padStart(2, '0')}`,
+      date: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(newKeyword.day).padStart(2, '0')}`,
       status: 'scheduled',
       targetLeads: 1000,
       qualifiedLeads: 0,
@@ -77,7 +77,7 @@ export function KeywordsPage() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-lg font-bold text-primary">Monthly Keyword Schedule</h2>
-          <p className="text-xs text-muted mt-0.5">30-day automated keyword rotation — Day 27 of 30</p>
+          <p className="text-xs text-muted mt-0.5">30-day automated keyword rotation — Day {Math.min(new Date().getDate(), 30)} of 30</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Button variant="outline" size="sm" icon={<Upload size={14} />} onClick={() => setShowImport(true)}>Import</Button>
