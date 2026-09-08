@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, Filter, Download, ScrollText } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
@@ -6,14 +6,18 @@ import { Button } from '@/components/ui/Button';
 import { Input, Select } from '@/components/ui/Input';
 import { Pagination } from '@/components/ui/DataTable';
 import { useToast } from '@/contexts/ToastContext';
-import { useApi } from '@/hooks/useApi';
+import { fetchLogs } from '@/lib/firestore-api';
 import type { ActivityLog } from '@/types';
 
 const PAGE_SIZE = 12;
 
 export function LogsPage() {
   const { addToast } = useToast();
-  const { data: activityLogs = [] } = useApi<ActivityLog[]>('/api/logs', []);
+  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
+
+  useEffect(() => {
+    fetchLogs().then(d => setActivityLogs(d as ActivityLog[])).catch(() => {});
+  }, []);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [page, setPage] = useState(1);

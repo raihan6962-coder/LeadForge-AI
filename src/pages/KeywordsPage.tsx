@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Plus, Search, Upload, Download, GripVertical, MoreVertical,
   Calendar, Tags as TagsIcon, Mail, TrendingUp,
@@ -9,15 +9,24 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal, ConfirmDialog } from '@/components/ui/Modal';
 import { useToast } from '@/contexts/ToastContext';
-import { useApi, useApiMutation } from '@/hooks/useApi';
+import { db } from '@/lib/firebase';
+import { collection, addDoc, deleteDoc, updateDoc, doc } from 'firebase/firestore';
+import { fetchKeywords } from '@/lib/firestore-api';
 import type { Keyword } from '@/types';
 
 export function KeywordsPage() {
   const { addToast } = useToast();
-  const { data: keywords = [], refetch } = useApi<Keyword[]>('/api/keywords', []);
-  const { mutate: createKeyword, loading: creating } = useApiMutation<Partial<Keyword>, Keyword>();
-  const { mutate: deleteKeywordMutate, loading: deleting } = useApiMutation<void, unknown>();
-  const { mutate: updateKeywordMutate, loading: updating } = useApiMutation<Partial<Keyword>, unknown>();
+  const [keywords, setKeywords] = useState<Keyword[]>([]);
+  const [creating, setCreating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const refetch = () => {
+    fetchKeywords().then(d => setKeywords(d as Keyword[])).catch(() => {});
+  };
+
+  useEffect(() => {
+    refetch();
+  }, []);
 
   const [search, setSearch] = useState('');
   const [showAdd, setShowAdd] = useState(false);
@@ -33,30 +42,45 @@ export function KeywordsPage() {
       addToast('error', 'Missing fields', 'Please enter a keyword and assign a day.');
       return;
     }
-    const result = await createKeyword('/api/keywords', {
-      keyword: newKeyword.keyword,
-      day: parseInt(newKeyword.day),
-      templateId: newKeyword.templateId || null,
-    });
-    if (result) {
+    setCreating(true);
+    try {
+      await addDoc(collection(db, 'keywords'), {
+        keyword: newKeyword.keyword,
+        day: parseInt(newKeyword.day),
+        templateId: newKeyword.templateId || null,
+        enabled: true,
+        status: 'scheduled',
+        qualifiedLeads: 0,
+        targetLeads: 1000,
+        completion: 0,
+        emailsSent: 0,
+        replies: 0,
+        date: new Date().toISOString(),
+        relatedQueries: [],
+      });
       setNewKeyword({ keyword: '', day: '', templateId: '' });
       setShowAdd(false);
       refetch();
       addToast('success', 'Keyword added', `"${newKeyword.keyword}" has been scheduled for Day ${newKeyword.day}.`);
-    } else {
+    } catch {
       addToast('error', 'Failed to add keyword', 'Could not save keyword to the database.');
+    } finally {
+      setCreating(false);
     }
   };
 
   const handleDelete = async () => {
     if (!deleteId) return;
-    const result = await deleteKeywordMutate(`/api/keywords?id=${deleteId}`, undefined, 'DELETE');
-    if (result !== null) {
+    setDeleting(true);
+    try {
+      await deleteDoc(doc(db, 'keywords', deleteId));
       setDeleteId(null);
       refetch();
       addToast('info', 'Keyword deleted', 'The keyword has been removed from the schedule.');
-    } else {
+    } catch {
       addToast('error', 'Failed to delete keyword', 'Could not remove keyword from the database.');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -64,7 +88,7 @@ export function KeywordsPage() {
     const kw = keywords.find(k => k.id === id);
     if (!kw) return;
     const newEnabled = !kw.enabled;
-    await updateKeywordMutate(`/api/keywords`, { id, enabled: newEnabled, status: newEnabled ? 'scheduled' : 'disabled' }, 'PUT');
+    await updateDoc(doc(db, 'keywords', id), { enabled: newEnabled, status: newEnabled ? 'scheduled' : 'disabled' });
     refetch();
   };
 

@@ -8,7 +8,9 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/Modal';
 import { useToast } from '@/contexts/ToastContext';
-import { useApi, useApiMutation } from '@/hooks/useApi';
+import { db } from '@/lib/firebase';
+import { addDoc, collection } from 'firebase/firestore';
+import { fetchKeywordRuns, fetchAutomation, fetchSettings } from '@/lib/firestore-api';
 import type { KeywordRun, CurrentJob } from '@/types';
 
 const defaultJob: CurrentJob = {
@@ -33,12 +35,19 @@ function formatElapsed(seconds: number): string {
 
 export function AutomationPage() {
   const { addToast } = useToast();
-  const { data: automationRuns = [], loading: runsLoading } = useApi<KeywordRun[]>('/api/keyword_runs', []);
-  const { data: currentJobData } = useApi<CurrentJob>('/api/automation', defaultJob);
-  const { data: telegramConfig } = useApi<{ enabled: boolean }>('/api/settings', { enabled: false }, ['telegram']);
-  const { mutate: triggerTestRun, loading: testRunning } = useApiMutation<{ action: string; keyword: string }, unknown>();
+  const [automationRuns, setAutomationRuns] = useState<KeywordRun[]>([]);
+  const [currentJobData, setCurrentJobData] = useState<CurrentJob>(defaultJob);
+  const [telegramConfig, setTelegramConfig] = useState<{ enabled: boolean }>({ enabled: false });
+  const [testRunning, setTestRunning] = useState(false);
+  const [runsLoading, setRunsLoading] = useState(true);
 
   const currentJob = currentJobData || defaultJob;
+
+  useEffect(() => {
+    fetchKeywordRuns().then(d => { setAutomationRuns(d); setRunsLoading(false); }).catch(() => setRunsLoading(false));
+    fetchAutomation().then(d => setCurrentJobData(d.run || defaultJob)).catch(() => {});
+    fetchSettings().then(d => setTelegramConfig({ enabled: (d as any).telegram?.enabled || false })).catch(() => {});
+  }, []);
 
   const [isRunning, setIsRunning] = useState(true);
   const [elapsed, setElapsed] = useState(currentJob.elapsedSeconds);
@@ -83,11 +92,26 @@ export function AutomationPage() {
   };
 
   const handleTestRun = async () => {
-    const result = await triggerTestRun('/api/automation', { action: 'start', keyword: 'test-keyword' });
-    if (result !== null) {
+    setTestRunning(true);
+    try {
+      await addDoc(collection(db, 'keyword_runs'), {
+        keyword: 'test-keyword',
+        startedAt: new Date().toISOString(),
+        expectedEnd: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+        status: 'running',
+        leadsDiscovered: 0,
+        qualified: 0,
+        duplicates: 0,
+        rejected: 0,
+        emailsSent: 0,
+        replies: 0,
+        exceededExpected: false,
+      });
       addToast('success', 'Test run started', 'A test automation run has been initiated with keyword "test-keyword".');
-    } else {
+    } catch {
       addToast('error', 'Test run failed', 'Could not start test automation run.');
+    } finally {
+      setTestRunning(false);
     }
   };
 

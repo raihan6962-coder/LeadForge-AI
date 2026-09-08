@@ -7,7 +7,6 @@ import { Card, CardHeader } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input, Select, Toggle, Textarea } from '@/components/ui/Input';
 import { useToast } from '@/contexts/ToastContext';
-import { useApi } from '@/hooks/useApi';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
@@ -47,10 +46,25 @@ const sections: { id: Section; label: string; icon: typeof SettingsIcon }[] = [
 export function SettingsPage() {
   const { addToast } = useToast();
   const [active, setActive] = useState<Section>('general');
-  const { data: settings, refetch } = useApi<typeof defaultSettings>('/api/settings', defaultSettings);
-  const { data: systemInfo } = useApi<typeof defaultSystem>('/api/system', defaultSystem);
+  const [settings, setSettings] = useState<any>(defaultSettings);
+  const [systemInfo] = useState(defaultSystem);
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
+
+  const fetchSettings = async () => {
+    try {
+      const snap = await getDoc(doc(db, 'settings', 'main'));
+      if (snap.exists()) {
+        setSettings(snap.data());
+      } else {
+        setSettings(defaultSettings);
+      }
+    } catch {
+      setSettings(defaultSettings);
+    }
+  };
+
+  useEffect(() => { fetchSettings(); }, []);
 
   const [systemName, setSystemName] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
@@ -162,7 +176,7 @@ export function SettingsPage() {
         updatedAt: new Date().toISOString(),
       };
       await setDoc(doc(db, 'settings', 'main'), payload, { merge: true });
-      refetch();
+      fetchSettings();
       addToast('success', 'Settings saved', 'Your changes have been saved successfully.');
     } catch {
       addToast('error', 'Save failed', 'Could not save settings to the database.');
@@ -182,7 +196,7 @@ export function SettingsPage() {
       const body = await res.json();
       if (body.success) {
         setShowResetConfirm(false);
-        refetch();
+        fetchSettings();
         addToast('success', 'Database reset', 'All data has been cleared.');
       } else {
         addToast('error', 'Reset failed', body.error || 'Could not reset the database.');

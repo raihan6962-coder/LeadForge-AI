@@ -9,7 +9,9 @@ import { Button } from '@/components/ui/Button';
 import { Input, Textarea } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/contexts/ToastContext';
-import { useApi, useApiMutation } from '@/hooks/useApi';
+import { db } from '@/lib/firebase';
+import { collection, addDoc, updateDoc, doc } from 'firebase/firestore';
+import { fetchTemplates } from '@/lib/firestore-api';
 import type { EmailTemplate } from '@/types';
 
 const allVariables = [
@@ -19,10 +21,16 @@ const allVariables = [
 
 export function TemplatesPage() {
   const { addToast } = useToast();
-  const { data: templates = [], refetch } = useApi<EmailTemplate[]>('/api/templates', []);
-  const { mutate: saveTemplate, loading: saving } = useApiMutation<Partial<EmailTemplate>, EmailTemplate>();
-  const { mutate: duplicateTemplate, loading: duplicating } = useApiMutation<Partial<EmailTemplate>, EmailTemplate>();
-  const { mutate: toggleTemplate, loading: toggling } = useApiMutation<Partial<EmailTemplate>, unknown>();
+  const [templates, setTemplates] = useState<EmailTemplate[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  const refetch = () => {
+    fetchTemplates().then(d => setTemplates(d as EmailTemplate[])).catch(() => {});
+  };
+
+  useEffect(() => {
+    refetch();
+  }, []);
 
   const [search, setSearch] = useState('');
   const [previewTemplate, setPreviewTemplate] = useState<EmailTemplate | null>(null);
@@ -49,31 +57,44 @@ export function TemplatesPage() {
   };
 
   const handleDuplicate = async (tpl: EmailTemplate) => {
-    const result = await duplicateTemplate('/api/templates', { ...tpl, id: undefined, name: `${tpl.name} (Copy)`, status: 'draft' });
-    if (result) {
+    try {
+      await addDoc(collection(db, 'email_templates'), {
+        ...tpl,
+        id: undefined,
+        name: `${tpl.name} (Copy)`,
+        status: 'draft',
+        lastUpdated: new Date().toISOString(),
+      });
       refetch();
       addToast('success', 'Template duplicated', `"${tpl.name}" has been duplicated.`);
-    } else {
+    } catch {
       addToast('error', 'Duplicate failed', 'Could not duplicate template.');
     }
   };
 
   const handleToggle = async (tpl: EmailTemplate) => {
     const newStatus = tpl.status === 'active' ? 'disabled' : 'active';
-    await toggleTemplate('/api/templates', { id: tpl.id, status: newStatus }, 'PUT');
+    await updateDoc(doc(db, 'email_templates', tpl.id), { status: newStatus, lastUpdated: new Date().toISOString() });
     refetch();
     addToast('info', 'Template updated', `"${tpl.name}" is now ${newStatus}.`);
   };
 
   const handleSave = async () => {
     if (!editTemplate) return;
-    const result = await saveTemplate('/api/templates', editTemplate);
-    if (result) {
+    setSaving(true);
+    try {
+      if (editTemplate.id) {
+        await updateDoc(doc(db, 'email_templates', editTemplate.id), { ...editTemplate, lastUpdated: new Date().toISOString() });
+      } else {
+        await addDoc(collection(db, 'email_templates'), { ...editTemplate, id: undefined, lastUpdated: new Date().toISOString() });
+      }
       setEditTemplate(null);
       refetch();
       addToast('success', 'Template saved', 'Template has been saved successfully.');
-    } else {
+    } catch {
       addToast('error', 'Save failed', 'Could not save template.');
+    } finally {
+      setSaving(false);
     }
   };
 

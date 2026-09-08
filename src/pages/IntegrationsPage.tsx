@@ -8,26 +8,18 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { Input, Toggle } from '@/components/ui/Input';
 import { useToast } from '@/contexts/ToastContext';
-import { useApi } from '@/hooks/useApi';
+import { fetchIntegrations, fetchSendAccounts } from '@/lib/firestore-api';
 import type { GoogleSheetsConfig, AIConfig, AIUsage, TelegramConfig, ForwardingConfig, SenderAccount } from '@/types';
 
 export function IntegrationsPage() {
   const { addToast } = useToast();
-  const { data: integrations } = useApi<{
-    googleSheets: GoogleSheetsConfig;
-    ai: AIConfig;
-    aiUsage: AIUsage;
-    telegram: TelegramConfig;
-    forwarding: ForwardingConfig;
-  }>('/api/integrations', {
-    googleSheets: { webAppUrl: '', autoSync: false, status: 'disconnected', lastSync: '', lastSuccessfulFetch: '', rowsImported: 0, errors: 0 },
-    ai: { provider: '', apiKey: '', personalizationEnabled: false, model: '', temperature: 0, maxTokens: 0 },
-    aiUsage: { requests: 0, successful: 0, failed: 0, avgLatencyMs: 0, estimatedCost: '$0' },
-    telegram: { enabled: false, botToken: '', chatId: '', notifications: {} as Record<string, boolean> },
-    forwarding: { enabled: false, email: '', lastForwarded: '', errors: 0 },
-  });
+  const [integrations, setIntegrations] = useState<any>(null);
+  const [senderAccounts, setSenderAccounts] = useState<SenderAccount[]>([]);
 
-  const { data: senderAccounts = [] } = useApi<SenderAccount[]>('/api/send_accounts', []);
+  useEffect(() => {
+    fetchIntegrations().then(d => setIntegrations(d)).catch(() => {});
+    fetchSendAccounts().then(d => setSenderAccounts(d as SenderAccount[])).catch(() => {});
+  }, []);
 
   const googleSheetsConfig = integrations?.googleSheets || { webAppUrl: '', autoSync: false, status: 'disconnected' as const, lastSync: '', lastSuccessfulFetch: '', rowsImported: 0, errors: 0 };
   const aiConfig = integrations?.ai || { provider: '', apiKey: '', personalizationEnabled: false, model: '', temperature: 0, maxTokens: 0 };

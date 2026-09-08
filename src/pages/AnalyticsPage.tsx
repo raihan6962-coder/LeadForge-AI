@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Users, Send, MessageSquare, Target, TrendingUp, Clock,
   BarChart3, Activity, Zap,
 } from 'lucide-react';
 import { Card, CardHeader, KPICard } from '@/components/ui/Card';
 import { LineChart, BarChart, DonutChart, Heatmap } from '@/components/ui/Charts';
-import { useApi } from '@/hooks/useApi';
+import { fetchAnalytics, fetchOutreach, fetchAutomationAnalytics } from '@/lib/firestore-api';
 
 type DateRange = 'today' | '7d' | '30d' | 'custom';
 
@@ -22,9 +22,23 @@ const defaultAutomation = { totalRuns: 0, avgRuntimeMinutes: 0, successRate: 0, 
 
 export function AnalyticsPage() {
   const [dateRange, setDateRange] = useState<DateRange>('7d');
-  const { data: analytics } = useApi<typeof defaultAnalytics>('/api/analytics', defaultAnalytics);
-  const { data: outreach } = useApi<{ queued: number; sent: number; failed: number; deferred: number; replyRate: number }>('/api/outreach', { queued: 0, sent: 0, failed: 0, deferred: 0, replyRate: 0 });
-  const { data: automationAnalytics } = useApi<typeof defaultAutomation>('/api/automation/analytics', defaultAutomation);
+  const [analytics, setAnalytics] = useState(defaultAnalytics);
+  const [outreach, setOutreach] = useState<any>({ queued: 0, sent: 0, failed: 0, deferred: 0, replyRate: 0 });
+  const [automationAnalytics, setAutomationAnalytics] = useState(defaultAutomation);
+
+  useEffect(() => {
+    fetchAnalytics().then(d => setAnalytics(d as typeof defaultAnalytics)).catch(() => {});
+    fetchOutreach().then(d => {
+      setOutreach({
+        queued: d.queueSize || 0,
+        sent: d.sent || 0,
+        failed: d.failed || 0,
+        deferred: d.deferred || 0,
+        replyRate: d.replies ? Math.round((d.replies / (d.sent || 1)) * 100) : 0,
+      });
+    }).catch(() => {});
+    fetchAutomationAnalytics().then(d => setAutomationAnalytics(d as typeof defaultAutomation)).catch(() => {});
+  }, []);
 
   const rangeButtons: { id: DateRange; label: string }[] = [
     { id: 'today', label: 'Today' },

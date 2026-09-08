@@ -8,7 +8,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { LineChart } from '@/components/ui/Charts';
 import { useNav } from '@/contexts/NavContext';
 import { useToast } from '@/contexts/ToastContext';
-import { useApi } from '@/hooks/useApi';
+import { fetchAutomation, fetchAnalytics, fetchOutreach, fetchKeywords, fetchKeywordRuns } from '@/lib/firestore-api';
 import type { AutomationPhase, KeywordRun } from '@/types';
 
 const phases: { id: AutomationPhase; label: string; icon: string }[] = [
@@ -32,11 +32,19 @@ export function OverviewPage() {
   const { navigate } = useNav();
   const { addToast } = useToast();
 
-  const { data: apiRun } = useApi<{ running: boolean; run: KeywordRun | null }>('/api/automation', { running: false, run: null });
-  const { data: analytics } = useApi<{ summary: { totalDiscovered: number; qualified: number; rejected: number; emailsSent: number; humanReplies: number; totalReplies: number; totalRuns: number; successfulRuns: number; failedRuns: number } }>('/api/analytics', { summary: { totalDiscovered: 0, qualified: 0, rejected: 0, emailsSent: 0, humanReplies: 0, totalReplies: 0, totalRuns: 0, successfulRuns: 0, failedRuns: 0 } });
-  const { data: outreach } = useApi<{ queueSize: number; sent: number; failed: number }>('/api/outreach', { queueSize: 0, sent: 0, failed: 0 });
-  const { data: keywordsData } = useApi<any[]>('/api/keywords', []);
-  const { data: runsData } = useApi<any[]>('/api/keyword_runs', []);
+  const [apiRun, setApiRun] = useState<{ running: boolean; run: KeywordRun | null }>({ running: false, run: null });
+  const [analytics, setAnalytics] = useState<any>({ summary: { totalDiscovered: 0, qualified: 0, rejected: 0, emailsSent: 0, humanReplies: 0, totalReplies: 0, totalRuns: 0, successfulRuns: 0, failedRuns: 0 } });
+  const [outreach, setOutreach] = useState<any>({ queueSize: 0, sent: 0, failed: 0 });
+  const [keywordsData, setKeywordsData] = useState<any[]>([]);
+  const [runsData, setRunsData] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetchAutomation().then(d => setApiRun(d)).catch(() => {});
+    fetchAnalytics().then(d => setAnalytics(d)).catch(() => {});
+    fetchOutreach().then(d => setOutreach(d)).catch(() => {});
+    fetchKeywords().then(d => setKeywordsData(d)).catch(() => {});
+    fetchKeywordRuns().then(d => setRunsData(d)).catch(() => {});
+  }, []);
 
   const summary = analytics?.summary || { totalDiscovered: 0, qualified: 0, rejected: 0, emailsSent: 0, humanReplies: 0, totalReplies: 0, totalRuns: 0, successfulRuns: 0, failedRuns: 0 };
 

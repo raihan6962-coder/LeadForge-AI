@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Mail, Send, Clock, AlertTriangle, CheckCircle2, XCircle,
   Inbox, ArrowRight, Settings, Gauge,
@@ -8,14 +8,24 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useToast } from '@/contexts/ToastContext';
-
-const outreachStats = { queueSize: 0, sent: 0, pending: 0, failed: 0, deferred: 0, replies: 0, bounces: 0, sendingIntervalMin: 0, sendingIntervalMax: 0 };
-const senderAccounts: any[] = [];
+import { fetchOutreach, fetchSendAccounts } from '@/lib/firestore-api';
 
 export function OutreachPage() {
   const { addToast } = useToast();
-  const [intervalMin, setIntervalMin] = useState(outreachStats.sendingIntervalMin);
-  const [intervalMax, setIntervalMax] = useState(outreachStats.sendingIntervalMax);
+  const [outreachStats, setOutreachStats] = useState({ queueSize: 0, sent: 0, pending: 0, failed: 0, deferred: 0, replies: 0, bounces: 0, sendingIntervalMin: 0, sendingIntervalMax: 0 });
+  const [senderAccounts, setSenderAccounts] = useState<any[]>([]);
+  const [intervalMin, setIntervalMin] = useState(0);
+  const [intervalMax, setIntervalMax] = useState(0);
+
+  useEffect(() => {
+    fetchOutreach().then(d => {
+      const stats = { ...d, pending: 0, sendingIntervalMin: 0, sendingIntervalMax: 0 };
+      setOutreachStats(stats);
+      setIntervalMin(stats.sendingIntervalMin);
+      setIntervalMax(stats.sendingIntervalMax);
+    }).catch(() => {});
+    fetchSendAccounts().then(d => setSenderAccounts(d)).catch(() => {});
+  }, []);
 
   const totalCapacity = senderAccounts.reduce((sum, s) => sum + s.dailyCapacity, 0);
   const totalSent = senderAccounts.reduce((sum, s) => sum + s.sentToday, 0);

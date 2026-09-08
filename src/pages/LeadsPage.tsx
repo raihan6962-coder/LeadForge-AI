@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Search, Filter, Download, Eye, Star, Mail, Globe, Tag as TagIcon,
   X, ChevronDown, FileText, History,
@@ -10,14 +10,18 @@ import { Input, Select } from '@/components/ui/Input';
 import { Drawer } from '@/components/ui/Modal';
 import { DataTable, Pagination } from '@/components/ui/DataTable';
 import { useToast } from '@/contexts/ToastContext';
-import { useApi } from '@/hooks/useApi';
+import { fetchLeads } from '@/lib/firestore-api';
 import type { Lead } from '@/types';
 
 const PAGE_SIZE = 10;
 
 export function LeadsPage() {
   const { addToast } = useToast();
-  const { data: allLeads = [] } = useApi<Lead[]>('/api/leads', []);
+  const [allLeads, setAllLeads] = useState<Lead[]>([]);
+
+  useEffect(() => {
+    fetchLeads().then(d => setAllLeads(d as Lead[])).catch(() => {});
+  }, []);
   const [search, setSearch] = useState('');
   const [qualFilter, setQualFilter] = useState('all');
   const [outreachFilter, setOutreachFilter] = useState('all');

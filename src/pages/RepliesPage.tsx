@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Mail, Search, Forward, Archive, Tag as TagIcon, User, Bot,
   Clock, AlertCircle, FileText, MessageSquare,
@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { Input, Select } from '@/components/ui/Input';
 import { Drawer } from '@/components/ui/Modal';
 import { useToast } from '@/contexts/ToastContext';
-import { useApi } from '@/hooks/useApi';
+import { fetchReplies } from '@/lib/firestore-api';
 import type { Reply } from '@/types';
 
 const classIcon: Record<string, typeof User> = {
@@ -22,7 +22,11 @@ const classIcon: Record<string, typeof User> = {
 
 export function RepliesPage() {
   const { addToast } = useToast();
-  const { data: replies = [] } = useApi<Reply[]>('/api/replies', []);
+  const [replies, setReplies] = useState<Reply[]>([]);
+
+  useEffect(() => {
+    fetchReplies().then(d => setReplies(d as Reply[])).catch(() => {});
+  }, []);
   const [search, setSearch] = useState('');
   const [classFilter, setClassFilter] = useState('all');
   const [selectedReply, setSelectedReply] = useState<Reply | null>(null);
