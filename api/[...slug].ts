@@ -254,36 +254,22 @@ export default async function handler(req, res) {
 function parsePlayStoreHTML(html: string, keyword: string) {
   const apps: any[] = [];
   try {
-    const titleRe = /<a[^>]*class="[^"]*QfxYec[^"]*"[^>]*>([^<]+)<\/a>/gi;
-    const devRe = /<span[^>]*class="[^"]*clf9vc[^"]*"[^>]*>([^<]+)<\/span>/gi;
-    const ratingRe = /<span[^>]*class="[^"]*w2KBkf[^"]*"[^>]*>([^<]*)<\/span>/gi;
-    const installsRe = /(\d[\d,\.]*\+?)\s*(?:downloads|installs)?/gi;
-    const linkRe = /<a[^>]*href="\/store\/apps\/details\?id=([^&"]+)/gi;
-
-    const titles: string[] = [];
-    const developers: string[] = [];
-    const ratings: string[] = [];
-    const packageIds: string[] = [];
-
+    // Method 1: Parse from rendered HTML - each app card has:
+    // <a href="/store/apps/details?id=PACKAGE">...<span class="DdYX5">NAME</span>...<span class="wMUdtb">DEV</span>...<span class="w2kbF">RATING</span>
+    const cardRe = /<a[^>]*href="\/store\/apps\/details\?id=([^"&]+)"[^>]*>[\s\S]*?<span class="DdYX5">([^<]+)<\/span>[\s\S]*?<span class="wMUdtb">([^<]+)<\/span>[\s\S]*?<span class="w2kbF">([\d.]+)<\/span>/gi;
     let m;
-    while ((m = titleRe.exec(html)) !== null) titles.push(m[1].trim());
-    while ((m = devRe.exec(html)) !== null) developers.push(m[1].trim());
-    while ((m = ratingRe.exec(html)) !== null) if (m[1].trim()) ratings.push(m[1].trim());
-    while ((m = linkRe.exec(html)) !== null) packageIds.push(m[1]);
-
-    const uniqueIds = [...new Set(packageIds)];
-    const count = Math.min(titles.length, uniqueIds.length, 20);
-
-    for (let i = 0; i < count; i++) {
-      const dev = developers[i] || 'Unknown Developer';
+    while ((m = cardRe.exec(html)) !== null) {
+      const pkg = m[1];
+      if (apps.some(a => a.packageName === pkg)) continue;
+      const dev = m[3].trim();
       const domain = dev.toLowerCase().replace(/[^a-z0-9]/g, '') + '.com';
       apps.push({
-        id: `playstore-${uniqueIds[i]}`,
-        packageName: uniqueIds[i],
-        appName: titles[i],
+        id: `playstore-${pkg}`,
+        packageName: pkg,
+        appName: m[2].trim(),
         developer: dev,
         developerEmail: `contact@${domain}`,
-        rating: ratings[i] ? parseFloat(ratings[i].replace(/[^\d.]/g, '')) || 0 : 0,
+        rating: parseFloat(m[4]) || 0,
         installs: 0,
         category: 'Apps',
         country: 'US',
@@ -293,35 +279,17 @@ function parsePlayStoreHTML(html: string, keyword: string) {
       });
     }
 
-    if (apps.length === 0) {
-      const altRe = /data-title="([^"]+)"[^>]*data-developer="([^"]*)"[^>]*href="\/store\/apps\/details\?id=([^&"]+)/gi;
-      while ((m = altRe.exec(html)) !== null) {
-        const dev = m[2] || 'Unknown Developer';
+    // Method 2: If method 1 got few results, try simpler link+name pattern
+    if (apps.length < 3) {
+      const simpleRe = /href="\/store\/apps\/details\?id=([^"&]+)"[^>]*>[\s\S]*?<span class="DdYX5">([^<]+)<\/span>/gi;
+      while ((m = simpleRe.exec(html)) !== null) {
+        const pkg = m[1];
+        if (apps.some(a => a.packageName === pkg)) continue;
         apps.push({
-          id: `playstore-${m[3]}`,
-          packageName: m[3],
-          appName: m[1],
-          developer: dev,
-          developerEmail: `contact@${dev.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`,
-          rating: 0,
-          installs: 0,
-          category: 'Apps',
-          country: 'US',
-          website: '',
-          source: 'google_play_search',
-          keyword,
-        });
-      }
-    }
-
-    if (apps.length === 0) {
-      const scriptRe = /\["([^"]{3,60})","([^"]{3,80})"\],\["([^"]*?developer[^"]*?)"\]/gi;
-      while ((m = scriptRe.exec(html)) !== null) {
-        apps.push({
-          id: `playstore-${m[1].toLowerCase().replace(/[^a-z0-9]/g, '')}`,
-          packageName: m[1],
-          appName: m[2],
-          developer: m[3],
+          id: `playstore-${pkg}`,
+          packageName: pkg,
+          appName: m[2].trim(),
+          developer: 'Unknown Developer',
           developerEmail: '',
           rating: 0,
           installs: 0,
@@ -331,7 +299,36 @@ function parsePlayStoreHTML(html: string, keyword: string) {
           source: 'google_play_search',
           keyword,
         });
-        if (apps.length >= 10) break;
+        if (apps.length >= 20) break;
+      }
+    }
+
+    // Method 3: Extract from embedded JSON in script tags
+    if (apps.length < 3) {
+      const pkgRe = /\["(com\.[a-zA-Z0-9._]+)",7\]/g;
+      const nameRe = /"([A-Z][^"]{2,80})"/g;
+      const pkgs: string[] = [];
+      const names: string[] = [];
+      while ((m = pkgRe.exec(html)) !== null) pkgs.push(m[1]);
+      while ((m = nameRe.exec(html)) !== null) names.push(m[1]);
+      for (const pkg of pkgs) {
+        if (apps.some(a => a.packageName === pkg)) continue;
+        const name = names.find(n => !n.includes('http') && n.length > 2) || pkg.split('.').pop();
+        apps.push({
+          id: `playstore-${pkg}`,
+          packageName: pkg,
+          appName: name,
+          developer: 'Unknown Developer',
+          developerEmail: '',
+          rating: 0,
+          installs: 0,
+          category: 'Apps',
+          country: 'US',
+          website: '',
+          source: 'google_play_search',
+          keyword,
+        });
+        if (apps.length >= 20) break;
       }
     }
   } catch (e) {
@@ -343,13 +340,13 @@ function parsePlayStoreHTML(html: string, keyword: string) {
 function parseAppDetails(html: string, appId: string) {
   const details: any = { packageName: appId, appName: '', developer: '', rating: 0, installs: '', category: '', description: '', website: '', email: '' };
   try {
-    const titleMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
+    const titleMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/i) || html.match(/class="DdYX5">([^<]+)<\/span>/i);
     if (titleMatch) details.appName = titleMatch[1].trim();
 
-    const devMatch = html.match(/<a[^>]*class="[^"]*([^"]*pcmcij[^"]*)"[^>]*>([^<]+)<\/a>/i);
-    if (devMatch) details.developer = devMatch[2].trim();
+    const devMatch = html.match(/class="wMUdtb">([^<]+)<\/span>/i) || html.match(/<a[^>]*class="[^"]*([^"]*pcmcij[^"]*)"[^>]*>([^<]+)<\/a>/i);
+    if (devMatch) details.developer = (devMatch[2] || devMatch[1]).trim();
 
-    const ratingMatch = html.match(/(\d\.?\d?)\s*out of\s*5/i);
+    const ratingMatch = html.match(/class="w2kbF">([\d.]+)<\/span>/i) || html.match(/(\d\.?\d?)\s*out of\s*5/i);
     if (ratingMatch) details.rating = parseFloat(ratingMatch[1]);
 
     const installsMatch = html.match(/([\d,\.]+)\+?\s*(?:downloads|installs)/i);
