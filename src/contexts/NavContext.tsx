@@ -2,7 +2,7 @@ import { createContext, useContext, useState, type ReactNode } from 'react';
 
 export type PageId =
   | 'overview' | 'automation' | 'keywords' | 'lead-generation' | 'leads'
-  | 'outreach' | 'replies' | 'analytics' | 'integrations' | 'settings' | 'logs';
+  | 'outreach' | 'replies' | 'analytics' | 'integrations' | 'settings' | 'logs' | 'testing';
 
 interface NavContextValue {
   currentPage: PageId;

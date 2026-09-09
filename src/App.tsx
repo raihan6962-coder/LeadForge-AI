@@ -20,6 +20,7 @@ import { AnalyticsPage } from '@/pages/AnalyticsPage';
 import { IntegrationsPage } from '@/pages/IntegrationsPage';
 import { LogsPage } from '@/pages/LogsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
+import { AutomationTestPage } from '@/pages/AutomationTestPage';
 import { useNav } from '@/contexts/NavContext';
 
 class ErrorBoundary extends Component<{ children: ReactNode; fallback?: ReactNode }, { hasError: boolean; error: Error | null }> {
@@ -81,6 +82,7 @@ function PageRouter() {
     case 'integrations': return <IntegrationsPage />;
     case 'settings': return <SettingsPage />;
     case 'logs': return <LogsPage />;
+    case 'testing': return <AutomationTestPage />;
     default: return <OverviewPage />;
   }
 }

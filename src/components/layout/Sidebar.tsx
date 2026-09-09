@@ -1,10 +1,9 @@
 import {
   LayoutDashboard, Zap, Tags, Search, Users, Mail, MessageSquare,
-  BarChart3, Plug, Settings, ScrollText, Activity,
+  BarChart3, Plug, Settings, ScrollText, Activity, Bot,
 } from 'lucide-react';
 import { type LucideIcon } from 'lucide-react';
 import { useNav, type PageId } from '@/contexts/NavContext';
-import { currentJob } from '@/data/mockData';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 
 interface NavItem {
@@ -23,6 +22,7 @@ const navItems: NavItem[] = [
   { id: 'replies', label: 'Replies', icon: MessageSquare },
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
   { id: 'integrations', label: 'Integrations', icon: Plug },
+  { id: 'testing', label: 'Automation Test', icon: Bot },
   { id: 'settings', label: 'Settings', icon: Settings },
   { id: 'logs', label: 'Activity Logs', icon: ScrollText },
 ];
@@ -84,16 +84,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
               <span className="text-[10px] text-muted uppercase tracking-wider">System Status</span>
               <StatusBadge status="online" size="sm" />
             </div>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-secondary">Current Job</span>
-            </div>
-            <p className="text-xs text-primary font-medium truncate">{currentJob.keyword}</p>
-            <div className="mt-2 flex items-center gap-2">
-              <div className="flex-1 h-1 bg-white/5 rounded-full overflow-hidden">
-                <div className="h-full bg-accent-500 rounded-full" style={{ width: `${(currentJob.progress.current / currentJob.progress.target) * 100}%` }} />
-              </div>
-              <span className="text-[10px] text-muted tabular-nums">{Math.round((currentJob.progress.current / currentJob.progress.target) * 100)}%</span>
-            </div>
+            <p className="text-xs text-secondary">Automation engine active</p>
           </div>
         </div>
       </aside>
