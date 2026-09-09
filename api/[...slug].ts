@@ -166,28 +166,87 @@ export default async function handler(req, res) {
       }
     }
 
-    // --- PLAY STORE SEARCH ---
+    // --- PLAY STORE SEARCH (using google-play-scraper) ---
     if (p === '/playstore/search') {
       if (req.method === 'GET') {
         const keyword = q('q');
         const lang = q('lang') || 'en';
         const country = q('country') || 'us';
+        const maxResults = parseInt(q('limit') || '50');
         if (!keyword) return fail(res, 400, 'Missing search keyword (q)');
 
         try {
-          const searchUrl = `https://play.google.com/store/search?q=${encodeURIComponent(keyword)}&c=apps&hl=${lang}&gl=${country}`;
-          const response = await fetch(searchUrl, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Accept-Language': 'en-US,en;q=0.9',
-              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            },
+          const gplay = require('google-play-scraper');
+          const searchResults = await gplay.search({
+            term: keyword,
+            lang: lang,
+            country: country,
+            num: Math.min(maxResults, 100),
           });
 
-          if (!response.ok) return fail(res, 502, 'Failed to fetch from Google Play Store');
+          const apps = [];
+          const seenIds = new Set();
 
-          const html = await response.text();
-          const apps = parsePlayStoreHTML(html, keyword);
+          for (const item of searchResults) {
+            const appId = item.appId;
+            if (!appId || seenIds.has(appId)) continue;
+            seenIds.add(appId);
+
+            try {
+              const details = await gplay.app({ appId: appId, lang: 'en', country: 'us' });
+
+              const hist = details.histogram || [0, 0, 0, 0, 0];
+              const totalReviews = hist.reduce((a: number, b: number) => a + b, 0);
+              const score = totalReviews > 0
+                ? Math.round(((1 * hist[0] + 2 * hist[1] + 3 * hist[2] + 4 * hist[3] + 5 * hist[4]) / totalReviews) * 10) / 10
+                : null;
+
+              const email = details.developerEmail || '';
+
+              apps.push({
+                id: appId,
+                packageName: appId,
+                appName: details.title || item.title || '',
+                developer: details.developer || item.developer || '',
+                developerEmail: email,
+                rating: score,
+                reviews: totalReviews,
+                installs: details.minInstalls || 0,
+                maxInstalls: details.maxInstalls || 0,
+                category: details.genre || '',
+                country: details.developerCountry || country,
+                website: details.developerWebsite || '',
+                description: (details.description || '').substring(0, 300),
+                icon: details.icon || '',
+                url: `https://play.google.com/store/apps/details?id=${appId}`,
+                source: 'google_play_api',
+                keyword,
+              });
+
+              await new Promise(r => setTimeout(r, 250));
+            } catch (detailErr) {
+              apps.push({
+                id: appId,
+                packageName: appId,
+                appName: item.title || '',
+                developer: item.developer || '',
+                developerEmail: '',
+                rating: item.score || null,
+                reviews: item.reviews || 0,
+                installs: item.installs || 0,
+                maxInstalls: item.maxInstalls || 0,
+                category: item.genre || '',
+                country: country,
+                website: '',
+                description: (item.summary || '').substring(0, 300),
+                icon: item.icon || '',
+                url: `https://play.google.com/store/apps/details?id=${appId}`,
+                source: 'google_play_search',
+                keyword,
+              });
+            }
+          }
+
           return ok(res, { apps, keyword, country, total: apps.length });
         } catch (err) {
           return fail(res, 500, 'Play Store search failed: ' + (err as Error).message);
@@ -204,19 +263,31 @@ export default async function handler(req, res) {
         if (!appId) return fail(res, 400, 'Missing app id');
 
         try {
-          const appUrl = `https://play.google.com/store/apps/details?id=${encodeURIComponent(appId)}&hl=${lang}&gl=${country}`;
-          const response = await fetch(appUrl, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Accept-Language': 'en-US,en;q=0.9',
-            },
+          const gplay = require('google-play-scraper');
+          const details = await gplay.app({ appId: appId, lang: lang, country: country });
+
+          const hist = details.histogram || [0, 0, 0, 0, 0];
+          const totalReviews = hist.reduce((a: number, b: number) => a + b, 0);
+          const score = totalReviews > 0
+            ? Math.round(((1 * hist[0] + 2 * hist[1] + 3 * hist[2] + 4 * hist[3] + 5 * hist[4]) / totalReviews) * 10) / 10
+            : null;
+
+          return ok(res, {
+            packageName: details.appId || appId,
+            appName: details.title || '',
+            developer: details.developer || '',
+            developerEmail: details.developerEmail || '',
+            rating: score,
+            reviews: totalReviews,
+            installs: details.minInstalls || 0,
+            maxInstalls: details.maxInstalls || 0,
+            category: details.genre || '',
+            country: details.developerCountry || country,
+            website: details.developerWebsite || '',
+            description: (details.description || '').substring(0, 500),
+            icon: details.icon || '',
+            url: `https://play.google.com/store/apps/details?id=${appId}`,
           });
-
-          if (!response.ok) return fail(res, 502, 'Failed to fetch app details');
-
-          const html = await response.text();
-          const details = parseAppDetails(html, appId);
-          return ok(res, details);
         } catch (err) {
           return fail(res, 500, 'App details fetch failed: ' + (err as Error).message);
         }
@@ -249,118 +320,6 @@ export default async function handler(req, res) {
   } catch (e) {
     return fail(res, 500, e.message || 'Internal error');
   }
-}
-
-function parsePlayStoreHTML(html: string, keyword: string) {
-  const apps: any[] = [];
-  try {
-    // Method 1: Parse from rendered HTML - each app card has:
-    // <a href="/store/apps/details?id=PACKAGE">...<span class="DdYX5">NAME</span>...<span class="wMUdtb">DEV</span>...<span class="w2kbF">RATING</span>
-    const cardRe = /<a[^>]*href="\/store\/apps\/details\?id=([^"&]+)"[^>]*>[\s\S]*?<span class="DdYX5">([^<]+)<\/span>[\s\S]*?<span class="wMUdtb">([^<]+)<\/span>[\s\S]*?<span class="w2kbF">([\d.]+)<\/span>/gi;
-    let m;
-    while ((m = cardRe.exec(html)) !== null) {
-      const pkg = m[1];
-      if (apps.some(a => a.packageName === pkg)) continue;
-      const dev = m[3].trim();
-      const domain = dev.toLowerCase().replace(/[^a-z0-9]/g, '') + '.com';
-      apps.push({
-        id: `playstore-${pkg}`,
-        packageName: pkg,
-        appName: m[2].trim(),
-        developer: dev,
-        developerEmail: `contact@${domain}`,
-        rating: parseFloat(m[4]) || 0,
-        installs: 0,
-        category: 'Apps',
-        country: 'US',
-        website: `https://${domain}`,
-        source: 'google_play_search',
-        keyword,
-      });
-    }
-
-    // Method 2: If method 1 got few results, try simpler link+name pattern
-    if (apps.length < 3) {
-      const simpleRe = /href="\/store\/apps\/details\?id=([^"&]+)"[^>]*>[\s\S]*?<span class="DdYX5">([^<]+)<\/span>/gi;
-      while ((m = simpleRe.exec(html)) !== null) {
-        const pkg = m[1];
-        if (apps.some(a => a.packageName === pkg)) continue;
-        apps.push({
-          id: `playstore-${pkg}`,
-          packageName: pkg,
-          appName: m[2].trim(),
-          developer: 'Unknown Developer',
-          developerEmail: '',
-          rating: 0,
-          installs: 0,
-          category: 'Apps',
-          country: 'US',
-          website: '',
-          source: 'google_play_search',
-          keyword,
-        });
-        if (apps.length >= 20) break;
-      }
-    }
-
-    // Method 3: Extract from embedded JSON in script tags
-    if (apps.length < 3) {
-      const pkgRe = /\["(com\.[a-zA-Z0-9._]+)",7\]/g;
-      const nameRe = /"([A-Z][^"]{2,80})"/g;
-      const pkgs: string[] = [];
-      const names: string[] = [];
-      while ((m = pkgRe.exec(html)) !== null) pkgs.push(m[1]);
-      while ((m = nameRe.exec(html)) !== null) names.push(m[1]);
-      for (const pkg of pkgs) {
-        if (apps.some(a => a.packageName === pkg)) continue;
-        const name = names.find(n => !n.includes('http') && n.length > 2) || pkg.split('.').pop();
-        apps.push({
-          id: `playstore-${pkg}`,
-          packageName: pkg,
-          appName: name,
-          developer: 'Unknown Developer',
-          developerEmail: '',
-          rating: 0,
-          installs: 0,
-          category: 'Apps',
-          country: 'US',
-          website: '',
-          source: 'google_play_search',
-          keyword,
-        });
-        if (apps.length >= 20) break;
-      }
-    }
-  } catch (e) {
-    console.error('Parse error:', e);
-  }
-  return apps;
-}
-
-function parseAppDetails(html: string, appId: string) {
-  const details: any = { packageName: appId, appName: '', developer: '', rating: 0, installs: '', category: '', description: '', website: '', email: '' };
-  try {
-    const titleMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/i) || html.match(/class="DdYX5">([^<]+)<\/span>/i);
-    if (titleMatch) details.appName = titleMatch[1].trim();
-
-    const devMatch = html.match(/class="wMUdtb">([^<]+)<\/span>/i) || html.match(/<a[^>]*class="[^"]*([^"]*pcmcij[^"]*)"[^>]*>([^<]+)<\/a>/i);
-    if (devMatch) details.developer = (devMatch[2] || devMatch[1]).trim();
-
-    const ratingMatch = html.match(/class="w2kbF">([\d.]+)<\/span>/i) || html.match(/(\d\.?\d?)\s*out of\s*5/i);
-    if (ratingMatch) details.rating = parseFloat(ratingMatch[1]);
-
-    const installsMatch = html.match(/([\d,\.]+)\+?\s*(?:downloads|installs)/i);
-    if (installsMatch) details.installs = installsMatch[1];
-
-    const catMatch = html.match(/<a[^>]*href="\/store\/apps\/category\/([^"?]+)/i);
-    if (catMatch) details.category = decodeURIComponent(catMatch[1]).replace(/_/g, ' ');
-
-    const descMatch = html.match(/<meta[^>]*name="description"[^>]*content="([^"]+)"/i);
-    if (descMatch) details.description = descMatch[1].substring(0, 200);
-  } catch (e) {
-    console.error('Parse details error:', e);
-  }
-  return details;
 }
 
 function formatUptime(seconds) {
