@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Play, Square, Zap, Search, CheckCircle2, Copy, XCircle,
-  Mail, Send, Clock, Target, ArrowRight, Bot, Globe, Star, AlertTriangle,
+  Mail, Clock, Target, ArrowRight, Bot, Globe, Star, AlertTriangle,
 } from 'lucide-react';
 import { Card, CardHeader, ProgressBar, KPICard } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
@@ -25,7 +25,7 @@ interface TestLead {
   developer: string;
   developerEmail: string;
   rating: number;
-  installs: string;
+  installs: number;
   category: string;
   country: string;
   website: string;
@@ -36,7 +36,103 @@ interface TestLead {
   rejectionReason?: string;
 }
 
+const CORS_PROXIES = [
+  'https://api.allorigins.win/raw?url=',
+  'https://corsproxy.io/?',
+];
+
 function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
+
+async function fetchWithProxy(url: string): Promise<string> {
+  for (const proxy of CORS_PROXIES) {
+    try {
+      const res = await fetch(proxy + encodeURIComponent(url), {
+        signal: AbortSignal.timeout(15000),
+      });
+      if (res.ok) return await res.text();
+    } catch { continue; }
+  }
+  throw new Error('All proxies failed');
+}
+
+function parsePlayStoreSearch(html: string): any[] {
+  const apps: any[] = [];
+  const seen = new Set<string>();
+
+  const cardRe = /<a[^>]*href="\/store\/apps\/details\?id=([^"&]+)"[^>]*>[\s\S]*?<span class="DdYX5">([^<]+)<\/span>[\s\S]*?<span class="wMUdtb">([^<]+)<\/span>[\s\S]*?<span class="w2kbF">([\d.]+)<\/span>/gi;
+  let m;
+  while ((m = cardRe.exec(html)) !== null) {
+    const pkg = m[1];
+    if (seen.has(pkg)) continue;
+    seen.add(pkg);
+    const dev = m[3].trim();
+    const domain = dev.toLowerCase().replace(/[^a-z0-9]/g, '') + '.com';
+    apps.push({
+      packageName: pkg,
+      appName: m[2].trim(),
+      developer: dev,
+      rating: parseFloat(m[4]) || 0,
+      website: `https://${domain}`,
+    });
+  }
+
+  if (apps.length < 3) {
+    const simpleRe = /href="\/store\/apps\/details\?id=([^"&]+)"[^>]*>[\s\S]{0,500}?<span class="DdYX5">([^<]+)<\/span>/gi;
+    while ((m = simpleRe.exec(html)) !== null) {
+      const pkg = m[1];
+      if (seen.has(pkg)) continue;
+      seen.add(pkg);
+      apps.push({
+        packageName: pkg,
+        appName: m[2].trim(),
+        developer: '',
+        rating: 0,
+        website: '',
+      });
+      if (apps.length >= 20) break;
+    }
+  }
+
+  if (apps.length < 3) {
+    const devRe = /<span class="wMUdtb">([^<]+)<\/span>/gi;
+    const pkgRe = /\/store\/apps\/details\?id=([a-zA-Z0-9._]+)/g;
+    const devs: string[] = [];
+    const pkgs: string[] = [];
+    while ((m = devRe.exec(html)) !== null) devs.push(m[1].trim());
+    while ((m = pkgRe.exec(html)) !== null) pkgs.push(m[1]);
+    const uniqPkgs = [...new Set(pkgs)];
+    for (let i = 0; i < Math.min(uniqPkgs.length, devs.length, 20); i++) {
+      if (seen.has(uniqPkgs[i])) continue;
+      seen.add(uniqPkgs[i]);
+      apps.push({
+        packageName: uniqPkgs[i],
+        appName: uniqPkgs[i].split('.').pop() || '',
+        developer: devs[i] || '',
+        rating: 0,
+        website: '',
+      });
+    }
+  }
+
+  return apps;
+}
+
+function parseAppDetails(html: string): { email: string; category: string; installs: string; description: string } {
+  const emailRe = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
+  const emails = html.match(emailRe) || [];
+  const realEmail = emails.find(e => !e.includes('google.com') && !e.includes('example') && !e.includes('sentry')) || '';
+
+  const catMatch = html.match(/href="\/store\/apps\/category\/([^"?]+)/i);
+  const category = catMatch ? decodeURIComponent(catMatch[1]).replace(/_/g, ' ') : '';
+
+  const instMatch = html.match(/([\d,]+)\+?\s*(?:downloads|installs)/i);
+  const installs = instMatch ? instMatch[1] : '';
+
+  const descMatch = html.match(/<meta[^>]*name="description"[^>]*content="([^"]+)"/i);
+  const description = descMatch ? descMatch[1].substring(0, 200) : '';
+
+  return { email: realEmail, category, installs, description };
+}
 
 export function AutomationTestPage() {
   const [keyword, setKeyword] = useState('');
@@ -55,29 +151,17 @@ export function AutomationTestPage() {
   const [logLines, setLogLines] = useState<string[]>([]);
   const [stats, setStats] = useState({ discovered: 0, qualified: 0, rejected: 0, duplicates: 0, enriched: 0 });
   const [error, setError] = useState('');
-  const intervalRef = useRef<any>(null);
   const timerRef = useRef<any>(null);
   const logRef = useRef<HTMLDivElement>(null);
 
   const targetCount = Math.min(parseInt(maxLeads) || 20, 50);
 
-  useEffect(() => { return () => { clearInterval(intervalRef.current); clearInterval(timerRef.current); }; }, []);
+  useEffect(() => { return () => { clearInterval(timerRef.current); }; }, []);
   useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [logLines]);
 
   const addLog = (msg: string) => {
     const time = new Date().toLocaleTimeString();
     setLogLines(prev => [...prev, `[${time}] ${msg}`]);
-  };
-
-  const fetchPlayStore = async (query: string): Promise<any[]> => {
-    try {
-      const res = await fetch(`/api/playstore/search?q=${encodeURIComponent(query)}&lang=en&country=us`);
-      const data = await res.json();
-      if (data.success && data.data?.apps) return data.data.apps;
-      return [];
-    } catch {
-      return [];
-    }
   };
 
   const startTest = async () => {
@@ -98,41 +182,53 @@ export function AutomationTestPage() {
     const maxI = parseInt(maxInstalls) || 100000;
     const minI = parseInt(minInstalls) || 100;
 
-    // Build search queries
     const queries: SearchQuery[] = [
       { query: keyword, type: 'primary', status: 'pending', resultsFound: 0 },
       { query: `${keyword} app`, type: 'expansion', status: 'pending', resultsFound: 0 },
       { query: `best ${keyword}`, type: 'expansion', status: 'pending', resultsFound: 0 },
     ];
     setSearchQueries([...queries]);
-    addLog(`Initializing Google Play Store scraper...`);
+    addLog(`Connecting to Google Play Store...`);
     await sleep(400);
     addLog(`Building search queries for "${keyword}"...`);
     await sleep(300);
 
-    // Execute search queries
     let allApps: any[] = [];
+
     for (let qi = 0; qi < queries.length; qi++) {
       queries[qi] = { ...queries[qi], status: 'querying' };
       setSearchQueries([...queries]);
       addLog(`Searching Google Play: "${queries[qi].query}"...`);
+
+      try {
+        const searchUrl = `https://play.google.com/store/search?q=${encodeURIComponent(queries[qi].query)}&c=apps&hl=en&gl=us`;
+        const html = await fetchWithProxy(searchUrl);
+        addLog(`Got HTML (${Math.round(html.length / 1024)}KB). Parsing...`);
+        queries[qi] = { ...queries[qi], status: 'parsing' };
+        setSearchQueries([...queries]);
+
+        await sleep(200);
+        const apps = parsePlayStoreSearch(html);
+        queries[qi] = { ...queries[qi], status: 'done', resultsFound: apps.length };
+        setSearchQueries([...queries]);
+        addLog(`Found ${apps.length} apps from "${queries[qi].query}"`);
+
+        for (const app of apps) {
+          if (!allApps.some(a => a.packageName === app.packageName)) {
+            allApps.push({ ...app, _queryIdx: qi });
+          }
+        }
+      } catch (err) {
+        queries[qi] = { ...queries[qi], status: 'error', resultsFound: 0 };
+        setSearchQueries([...queries]);
+        addLog(`Search failed for "${queries[qi].query}": ${(err as Error).message}`);
+      }
+
       await sleep(500);
-
-      const apps = await fetchPlayStore(queries[qi].query);
-      queries[qi] = { ...queries[qi], status: 'parsing', resultsFound: apps.length };
-      setSearchQueries([...queries]);
-      addLog(`Found ${apps.length} apps. Parsing results...`);
-      await sleep(300);
-
-      allApps = [...allApps, ...apps.map(a => ({ ...a, _queryIdx: qi }))];
-      queries[qi] = { ...queries[qi], status: 'done' };
-      setSearchQueries([...queries]);
-      addLog(`Query ${qi + 1} complete. ${apps.length} results.`);
-      await sleep(200);
     }
 
     if (allApps.length === 0) {
-      setError('No results found from Google Play Store. The service may be temporarily unavailable or blocking automated requests.');
+      setError('No results found. Google Play may be temporarily blocking automated requests. Try again in a moment.');
       addLog('ERROR: No results returned from Google Play Store.');
       clearInterval(timerRef.current);
       setIsRunning(false);
@@ -142,45 +238,63 @@ export function AutomationTestPage() {
 
     setPhase('discovery');
     setProgress(20);
-    addLog(`Search complete. ${allApps.length} total apps discovered. Starting qualification...`);
+    addLog(`${allApps.length} unique apps discovered. Fetching details...`);
     await sleep(400);
 
-    // Deduplicate by packageName
-    const seen = new Set<string>();
-    const unique: any[] = [];
-    for (const app of allApps) {
-      if (!seen.has(app.packageName)) {
-        seen.add(app.packageName);
-        unique.push(app);
-      }
-    }
-    addLog(`After dedup: ${unique.length} unique apps.`);
-    await sleep(300);
-
-    // Qualify
     let leadList: TestLead[] = [];
     let qualified = 0;
     let rejected = 0;
     let duplicates = 0;
+    const seenEmails = new Set<string>();
+    const seenPkgs = new Set<string>();
 
-    for (let i = 0; i < unique.length && leadList.length < targetCount; i++) {
-      const app = unique[i];
-      const rating = app.rating || 0;
-      const installs = parseInt(String(app.installs).replace(/[^0-9]/g, '')) || 0;
-      const email = app.developerEmail || `contact@${app.developer?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'unknown'}.com`;
+    const appsToProcess = allApps.slice(0, targetCount + 15);
 
-      const isDup = seen.has(email);
-      seen.add(email);
+    for (let i = 0; i < appsToProcess.length && leadList.length < targetCount; i++) {
+      const app = appsToProcess[i];
+
+      if (seenPkgs.has(app.packageName)) {
+        duplicates++;
+        continue;
+      }
+      seenPkgs.add(app.packageName);
+
+      let email = '';
+      let category = app.category || '';
+      let installs = app.installs || 0;
+      let description = '';
+
+      try {
+        addLog(`  Fetching details: ${app.appName}...`);
+        const detailUrl = `https://play.google.com/store/apps/details?id=${app.packageName}&hl=en&gl=us`;
+        const detailHtml = await fetchWithProxy(detailUrl);
+        const details = parseAppDetails(detailHtml);
+        email = details.email;
+        if (details.category) category = details.category;
+        if (details.installs) installs = parseInt(details.installs.replace(/[^0-9]/g, '')) || 0;
+        description = details.description;
+        await sleep(300);
+      } catch {
+        addLog(`  Could not fetch details for ${app.appName}`);
+      }
+
+      if (email && seenEmails.has(email)) {
+        duplicates++;
+        addLog(`  ⊘ Duplicate email: ${app.appName}`);
+        continue;
+      }
+      if (email) seenEmails.add(email);
 
       let status: TestLead['status'] = 'qualified';
       let rejectionReason = '';
 
-      if (isDup) {
-        status = 'duplicate';
-        duplicates++;
-      } else if (rating > 0 && rating < minR) {
+      if (!email) {
         status = 'rejected';
-        rejectionReason = `Rating ${rating} below minimum ${minR}`;
+        rejectionReason = 'No developer email found';
+        rejected++;
+      } else if (app.rating > 0 && app.rating < minR) {
+        status = 'rejected';
+        rejectionReason = `Rating ${app.rating} below minimum ${minR}`;
         rejected++;
       } else if (installs > 0 && installs < minI) {
         status = 'rejected';
@@ -196,13 +310,13 @@ export function AutomationTestPage() {
         packageName: app.packageName,
         developer: app.developer || 'Unknown',
         developerEmail: email,
-        rating,
-        installs: app.installs || '0',
-        category: app.category || 'Apps',
-        country: app.country || 'US',
+        rating: app.rating || 0,
+        installs,
+        category: category || 'Apps',
+        country: 'US',
         website: app.website || '',
         email,
-        source: app.source || 'Google Play',
+        source: 'Google Play Store',
         phase: 'discovery',
         status,
         rejectionReason: rejectionReason || undefined,
@@ -210,33 +324,26 @@ export function AutomationTestPage() {
 
       leadList = [...leadList, lead];
       setLeads([...leadList]);
-      setProgress(Math.round(20 + (i / unique.length) * 60));
+      setProgress(Math.round(20 + (i / appsToProcess.length) * 65));
       setStats({ discovered: i + 1, qualified, rejected, duplicates, enriched: 0 });
 
-      if (status === 'qualified') addLog(`  ✓ Qualified: ${app.appName} (${rating}★)`);
-      else if (status === 'duplicate') addLog(`  ⊘ Duplicate: ${app.appName}`);
-      else addLog(`  ✗ Rejected: ${app.appName} — ${rejectionReason}`);
-
-      await sleep(100);
+      if (status === 'qualified') addLog(`  ✓ ${app.appName} — ${email}`);
+      else addLog(`  ✗ ${app.appName} — ${rejectionReason}`);
     }
 
-    // Dedup phase
     setPhase('deduplication');
-    setProgress(85);
-    addLog(`Deduplication complete. ${duplicates} duplicates removed.`);
+    setProgress(90);
+    addLog(`Dedup: ${duplicates} duplicates removed.`);
     await sleep(400);
 
-    // Enrichment
     setPhase('enrichment');
-    setProgress(92);
+    setProgress(95);
     addLog(`Enriching ${qualified} qualified leads...`);
-    await sleep(600);
+    await sleep(500);
     setStats(p => ({ ...p, enriched: qualified }));
     addLog(`Enrichment complete.`);
     await sleep(300);
 
-    // Complete
-    clearInterval(intervalRef.current);
     clearInterval(timerRef.current);
     setPhase('complete');
     setIsRunning(false);
@@ -246,7 +353,6 @@ export function AutomationTestPage() {
   };
 
   const stopTest = () => {
-    clearInterval(intervalRef.current);
     clearInterval(timerRef.current);
     setIsRunning(false);
     setPhase('idle');
@@ -270,12 +376,11 @@ export function AutomationTestPage() {
         </div>
         <div>
           <h2 className="text-lg font-bold text-primary">Automation Testing</h2>
-          <p className="text-xs text-muted">Searches Google Play Store for real app data — no data saved</p>
+          <p className="text-xs text-muted">Scrapes real Google Play Store data — no data saved</p>
         </div>
         <span className="ml-auto px-2 py-1 rounded-md bg-warning-500/10 border border-warning-500/20 text-warning-400 text-[10px] font-semibold uppercase">Test Mode</span>
       </div>
 
-      {/* Config */}
       <Card>
         <CardHeader title="Test Configuration" subtitle="Enter a keyword to search Google Play Store" icon={<Target size={18} />} />
         <div className="px-5 pb-5 space-y-4">
@@ -306,7 +411,6 @@ export function AutomationTestPage() {
         </div>
       </Card>
 
-      {/* Pipeline */}
       {phase !== 'idle' && (
         <Card>
           <div className="p-5 border-b border-white/10">
@@ -336,7 +440,6 @@ export function AutomationTestPage() {
         </Card>
       )}
 
-      {/* Search Queries */}
       {searchQueries.length > 0 && (
         <Card>
           <CardHeader title="Search Queries" subtitle="Google Play Store search" icon={<Globe size={18} />} />
@@ -353,7 +456,6 @@ export function AutomationTestPage() {
         </Card>
       )}
 
-      {/* Stats */}
       {phase !== 'idle' && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <KPICard label="Discovered" value={stats.discovered} icon={<Search size={16} />} color="accent" />
@@ -364,7 +466,6 @@ export function AutomationTestPage() {
         </div>
       )}
 
-      {/* Activity Log */}
       {logLines.length > 0 && (
         <Card>
           <CardHeader title="Activity Log" subtitle={`${logLines.length} entries`} icon={<Clock size={18} />} />
@@ -376,19 +477,18 @@ export function AutomationTestPage() {
         </Card>
       )}
 
-      {/* Lead Stream */}
       {leads.length > 0 && (
         <Card>
-          <CardHeader title="Live Lead Stream" subtitle={`${leads.length} apps from Google Play Store`} icon={<Zap size={18} />} />
+          <CardHeader title="Live Lead Stream" subtitle={`${leads.length} leads from Google Play Store`} icon={<Zap size={18} />} />
           <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
             <table className="w-full">
               <thead className="sticky top-0 bg-[#0f1620]">
                 <tr className="border-b border-white/10">
                   <th className="py-2 px-3 text-left text-[10px] font-semibold text-muted uppercase">ID</th>
                   <th className="py-2 px-3 text-left text-[10px] font-semibold text-muted uppercase">App Name</th>
-                  <th className="py-2 px-3 text-left text-[10px] font-semibold text-muted uppercase">Package</th>
                   <th className="py-2 px-3 text-left text-[10px] font-semibold text-muted uppercase">Developer</th>
                   <th className="py-2 px-3 text-center text-[10px] font-semibold text-muted uppercase">Rating</th>
+                  <th className="py-2 px-3 text-right text-[10px] font-semibold text-muted uppercase">Installs</th>
                   <th className="py-2 px-3 text-left text-[10px] font-semibold text-muted uppercase">Email</th>
                   <th className="py-2 px-3 text-center text-[10px] font-semibold text-muted uppercase">Status</th>
                   {leads.some(l => l.rejectionReason) && (
@@ -402,15 +502,16 @@ export function AutomationTestPage() {
                     <td className="py-2 px-3 text-[10px] text-muted font-mono">{lead.id}</td>
                     <td className="py-2 px-3">
                       <div className="text-xs text-primary font-medium">{lead.appName}</div>
+                      <div className="text-[9px] text-muted font-mono">{lead.packageName}</div>
                     </td>
-                    <td className="py-2 px-3 text-[10px] text-muted font-mono max-w-[180px] truncate">{lead.packageName}</td>
                     <td className="py-2 px-3 text-xs text-secondary">{lead.developer}</td>
                     <td className="py-2 px-3 text-xs text-center">
                       <span className="flex items-center gap-0.5 justify-center">
                         {lead.rating > 0 ? <><Star size={10} className="text-warning-400" />{lead.rating}</> : <span className="text-muted">—</span>}
                       </span>
                     </td>
-                    <td className="py-2 px-3 text-xs text-accent-300 font-mono">{lead.email}</td>
+                    <td className="py-2 px-3 text-xs text-secondary text-right tabular-nums">{lead.installs > 0 ? lead.installs.toLocaleString() : '—'}</td>
+                    <td className="py-2 px-3 text-xs text-accent-300 font-mono">{lead.email || '—'}</td>
                     <td className="py-2 px-3 text-center">
                       <StatusBadge status={lead.status} />
                     </td>
@@ -425,12 +526,11 @@ export function AutomationTestPage() {
         </Card>
       )}
 
-      {/* Empty State */}
       {phase === 'idle' && !error && (
         <Card className="p-12 text-center">
           <Bot size={40} className="text-muted mx-auto mb-3" />
           <p className="text-sm text-secondary mb-1">Enter a keyword and click "Start Test"</p>
-          <p className="text-xs text-muted">Searches Google Play Store and returns real app data</p>
+          <p className="text-xs text-muted">Scrapes real data from Google Play Store using browser connection</p>
           <p className="text-[10px] text-muted mt-2">Try: fitness tracker, meditation, yoga, running, weight loss</p>
         </Card>
       )}
