@@ -166,6 +166,63 @@ export default async function handler(req, res) {
       }
     }
 
+    // --- PLAY STORE SEARCH ---
+    if (p === '/playstore/search') {
+      if (req.method === 'GET') {
+        const keyword = q('q');
+        const lang = q('lang') || 'en';
+        const country = q('country') || 'us';
+        if (!keyword) return fail(res, 400, 'Missing search keyword (q)');
+
+        try {
+          const searchUrl = `https://play.google.com/store/search?q=${encodeURIComponent(keyword)}&c=apps&hl=${lang}&gl=${country}`;
+          const response = await fetch(searchUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept-Language': 'en-US,en;q=0.9',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            },
+          });
+
+          if (!response.ok) return fail(res, 502, 'Failed to fetch from Google Play Store');
+
+          const html = await response.text();
+          const apps = parsePlayStoreHTML(html, keyword);
+          return ok(res, { apps, keyword, country, total: apps.length });
+        } catch (err) {
+          return fail(res, 500, 'Play Store search failed: ' + (err as Error).message);
+        }
+      }
+    }
+
+    // --- PLAY STORE APP DETAILS ---
+    if (p === '/playstore/app') {
+      if (req.method === 'GET') {
+        const appId = q('id');
+        const lang = q('lang') || 'en';
+        const country = q('country') || 'us';
+        if (!appId) return fail(res, 400, 'Missing app id');
+
+        try {
+          const appUrl = `https://play.google.com/store/apps/details?id=${encodeURIComponent(appId)}&hl=${lang}&gl=${country}`;
+          const response = await fetch(appUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept-Language': 'en-US,en;q=0.9',
+            },
+          });
+
+          if (!response.ok) return fail(res, 502, 'Failed to fetch app details');
+
+          const html = await response.text();
+          const details = parseAppDetails(html, appId);
+          return ok(res, details);
+        } catch (err) {
+          return fail(res, 500, 'App details fetch failed: ' + (err as Error).message);
+        }
+      }
+    }
+
     // --- INTEGRATIONS ---
     if (p === '/integrations') {
       const ref = db.collection('settings').doc('main');
@@ -192,6 +249,121 @@ export default async function handler(req, res) {
   } catch (e) {
     return fail(res, 500, e.message || 'Internal error');
   }
+}
+
+function parsePlayStoreHTML(html: string, keyword: string) {
+  const apps: any[] = [];
+  try {
+    const titleRe = /<a[^>]*class="[^"]*QfxYec[^"]*"[^>]*>([^<]+)<\/a>/gi;
+    const devRe = /<span[^>]*class="[^"]*clf9vc[^"]*"[^>]*>([^<]+)<\/span>/gi;
+    const ratingRe = /<span[^>]*class="[^"]*w2KBkf[^"]*"[^>]*>([^<]*)<\/span>/gi;
+    const installsRe = /(\d[\d,\.]*\+?)\s*(?:downloads|installs)?/gi;
+    const linkRe = /<a[^>]*href="\/store\/apps\/details\?id=([^&"]+)/gi;
+
+    const titles: string[] = [];
+    const developers: string[] = [];
+    const ratings: string[] = [];
+    const packageIds: string[] = [];
+
+    let m;
+    while ((m = titleRe.exec(html)) !== null) titles.push(m[1].trim());
+    while ((m = devRe.exec(html)) !== null) developers.push(m[1].trim());
+    while ((m = ratingRe.exec(html)) !== null) if (m[1].trim()) ratings.push(m[1].trim());
+    while ((m = linkRe.exec(html)) !== null) packageIds.push(m[1]);
+
+    const uniqueIds = [...new Set(packageIds)];
+    const count = Math.min(titles.length, uniqueIds.length, 20);
+
+    for (let i = 0; i < count; i++) {
+      const dev = developers[i] || 'Unknown Developer';
+      const domain = dev.toLowerCase().replace(/[^a-z0-9]/g, '') + '.com';
+      apps.push({
+        id: `playstore-${uniqueIds[i]}`,
+        packageName: uniqueIds[i],
+        appName: titles[i],
+        developer: dev,
+        developerEmail: `contact@${domain}`,
+        rating: ratings[i] ? parseFloat(ratings[i].replace(/[^\d.]/g, '')) || 0 : 0,
+        installs: 0,
+        category: 'Apps',
+        country: 'US',
+        website: `https://${domain}`,
+        source: 'google_play_search',
+        keyword,
+      });
+    }
+
+    if (apps.length === 0) {
+      const altRe = /data-title="([^"]+)"[^>]*data-developer="([^"]*)"[^>]*href="\/store\/apps\/details\?id=([^&"]+)/gi;
+      while ((m = altRe.exec(html)) !== null) {
+        const dev = m[2] || 'Unknown Developer';
+        apps.push({
+          id: `playstore-${m[3]}`,
+          packageName: m[3],
+          appName: m[1],
+          developer: dev,
+          developerEmail: `contact@${dev.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`,
+          rating: 0,
+          installs: 0,
+          category: 'Apps',
+          country: 'US',
+          website: '',
+          source: 'google_play_search',
+          keyword,
+        });
+      }
+    }
+
+    if (apps.length === 0) {
+      const scriptRe = /\["([^"]{3,60})","([^"]{3,80})"\],\["([^"]*?developer[^"]*?)"\]/gi;
+      while ((m = scriptRe.exec(html)) !== null) {
+        apps.push({
+          id: `playstore-${m[1].toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+          packageName: m[1],
+          appName: m[2],
+          developer: m[3],
+          developerEmail: '',
+          rating: 0,
+          installs: 0,
+          category: 'Apps',
+          country: 'US',
+          website: '',
+          source: 'google_play_search',
+          keyword,
+        });
+        if (apps.length >= 10) break;
+      }
+    }
+  } catch (e) {
+    console.error('Parse error:', e);
+  }
+  return apps;
+}
+
+function parseAppDetails(html: string, appId: string) {
+  const details: any = { packageName: appId, appName: '', developer: '', rating: 0, installs: '', category: '', description: '', website: '', email: '' };
+  try {
+    const titleMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
+    if (titleMatch) details.appName = titleMatch[1].trim();
+
+    const devMatch = html.match(/<a[^>]*class="[^"]*([^"]*pcmcij[^"]*)"[^>]*>([^<]+)<\/a>/i);
+    if (devMatch) details.developer = devMatch[2].trim();
+
+    const ratingMatch = html.match(/(\d\.?\d?)\s*out of\s*5/i);
+    if (ratingMatch) details.rating = parseFloat(ratingMatch[1]);
+
+    const installsMatch = html.match(/([\d,\.]+)\+?\s*(?:downloads|installs)/i);
+    if (installsMatch) details.installs = installsMatch[1];
+
+    const catMatch = html.match(/<a[^>]*href="\/store\/apps\/category\/([^"?]+)/i);
+    if (catMatch) details.category = decodeURIComponent(catMatch[1]).replace(/_/g, ' ');
+
+    const descMatch = html.match(/<meta[^>]*name="description"[^>]*content="([^"]+)"/i);
+    if (descMatch) details.description = descMatch[1].substring(0, 200);
+  } catch (e) {
+    console.error('Parse details error:', e);
+  }
+  return details;
 }
 
 function formatUptime(seconds) {
